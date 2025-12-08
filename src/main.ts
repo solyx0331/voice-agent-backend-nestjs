@@ -7,7 +7,7 @@ async function bootstrap() {
 
   // Get allowed origins from environment or use defaults
   const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
+    ? process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim().replace(/\/$/, ""))
     : [
         "http://localhost:3000",
         "http://localhost:5173",
@@ -15,7 +15,7 @@ async function bootstrap() {
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:8080",
-        "https://voice-agent-phi-ten.vercel.app/"
+        "https://voice-agent-phi-ten.vercel.app",
       ];
 
   // Get allowed origin patterns (for Vercel, Netlify, etc.)
@@ -34,28 +34,36 @@ async function bootstrap() {
     origin: (origin, callback) => {
       // Allow requests with no origin (like mobile apps, Postman, etc.)
       if (!origin) {
+        console.log("CORS: Allowing request with no origin");
         return callback(null, true);
       }
 
+      // Normalize origin (remove trailing slash)
+      const normalizedOrigin = origin.replace(/\/$/, "");
+
       // Check if origin is in allowed list
-      if (allowedOrigins.includes(origin)) {
+      if (allowedOrigins.includes(normalizedOrigin) || allowedOrigins.includes(origin)) {
+        console.log("CORS: Allowing origin (exact match):", origin);
         return callback(null, true);
       }
 
       // Check if origin matches any allowed pattern
       const matchesPattern = allowedPatterns.some((pattern) => {
         if (pattern instanceof RegExp) {
-          return pattern.test(origin);
+          return pattern.test(normalizedOrigin) || pattern.test(origin);
         }
-        return origin.includes(pattern);
+        return normalizedOrigin.includes(pattern) || origin.includes(pattern);
       });
 
       if (matchesPattern) {
+        console.log("CORS: Allowing origin (pattern match):", origin);
         return callback(null, true);
       }
 
       // Log rejected origins for debugging
       console.log("CORS blocked origin:", origin);
+      console.log("Allowed origins:", allowedOrigins);
+      console.log("Allowed patterns:", allowedPatterns);
       callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
