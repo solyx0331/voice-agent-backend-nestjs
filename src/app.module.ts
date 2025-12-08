@@ -22,11 +22,29 @@ import { SearchModule } from "./modules/search/search.module";
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
         const databaseUrl = configService.get<string>("DATABASE_URL");
-        
+        console.log("databaseUrl", databaseUrl);
         // Use DATABASE_URL if provided, otherwise construct from individual config
         if (databaseUrl) {
+          // Ensure database name is included in the connection string
+          let uri = databaseUrl;
+          const dbName = configService.get<string>("DB_NAME") || "voice_ai_agent";
+          
+          // If URI doesn't have a database name, add it
+          if (!uri.includes("/") || uri.split("/").length < 2 || uri.split("/")[1].includes("?")) {
+            // Extract query parameters if they exist
+            const urlParts = uri.split("?");
+            const baseUrl = urlParts[0];
+            const queryParams = urlParts[1] || "";
+            
+            // Add database name before query parameters
+            const separator = baseUrl.endsWith("/") ? "" : "/";
+            uri = `${baseUrl}${separator}${dbName}${queryParams ? `?${queryParams}` : ""}`;
+          }
+
           return {
-            uri: databaseUrl,
+            uri,
+            retryWrites: true,
+            w: "majority",
           };
         }
 
