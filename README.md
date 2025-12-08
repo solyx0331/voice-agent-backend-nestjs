@@ -49,6 +49,10 @@ DB_USERNAME=admin
 DB_PASSWORD=password
 DB_NAME=voice_ai_agent
 
+# CORS Configuration (comma-separated list of allowed origins)
+# Example: ALLOWED_ORIGINS=http://localhost:8080,https://yourdomain.com
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:8080
+
 # Application Settings
 PORT=8000
 NODE_ENV=development
