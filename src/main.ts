@@ -18,15 +18,12 @@ async function bootstrap() {
         "https://voice-agent-phi-ten.vercel.app",
       ];
 
-  // Get allowed origin patterns (for Vercel, Netlify, ngrok, etc.)
+  // Get allowed origin patterns (for Vercel, Netlify, etc.)
   const allowedPatterns = process.env.ALLOWED_ORIGIN_PATTERNS
     ? process.env.ALLOWED_ORIGIN_PATTERNS.split(",").map((pattern) => pattern.trim())
     : [
         /^https:\/\/.*\.vercel\.app$/,
         /^https:\/\/.*\.netlify\.app$/,
-        /^https:\/\/.*\.ngrok(-free|-io)?\.app$/,
-        /^https:\/\/.*\.ngrok-free\.app$/,
-        /^https:\/\/.*\.ngrok\.io$/,
       ];
 
   console.log("Allowed CORS origins:", allowedOrigins);
