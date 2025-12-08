@@ -7,6 +7,7 @@ import {
   VoiceAgentSchema,
 } from "../../schemas/voice-agent.schema";
 import { Call, CallSchema } from "../../schemas/call.schema";
+import { RetellService } from "../../services/retell.service";
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { Call, CallSchema } from "../../schemas/call.schema";
     ]),
   ],
   controllers: [AgentsController],
-  providers: [AgentsService],
+  providers: [AgentsService, RetellService],
   exports: [AgentsService],
 })
 export class AgentsModule {}

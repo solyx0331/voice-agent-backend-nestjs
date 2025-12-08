@@ -26,6 +26,12 @@ export class VoiceAgent {
   @Prop({ default: "0:00" })
   avgDuration: string;
 
+  @Prop()
+  retellAgentId?: string;
+
+  @Prop()
+  retellLlmId?: string;
+
   @Prop({ type: Object })
   voice?: {
     type: "generic" | "custom";

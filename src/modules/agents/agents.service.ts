@@ -1,17 +1,21 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, Logger } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { VoiceAgent, VoiceAgentDocument } from "../../schemas/voice-agent.schema";
 import { Call, CallDocument } from "../../schemas/call.schema";
 import { CreateAgentDto, UpdateAgentDto } from "../../dto/agent.dto";
+import { RetellService } from "../../services/retell.service";
 
 @Injectable()
 export class AgentsService {
+  private readonly logger = new Logger(AgentsService.name);
+
   constructor(
     @InjectModel(VoiceAgent.name)
     private agentModel: Model<VoiceAgentDocument>,
     @InjectModel(Call.name)
-    private callModel: Model<CallDocument>
+    private callModel: Model<CallDocument>,
+    private retellService: RetellService
   ) {}
 
   async findAll() {
@@ -50,34 +54,204 @@ export class AgentsService {
   }
 
   async create(createAgentDto: CreateAgentDto) {
-    const agent = new this.agentModel({
-      ...createAgentDto,
-      status: createAgentDto.status || "inactive",
-      calls: 0,
-      avgDuration: "0:00",
-    });
+    let retellLlmId: string | undefined;
+    let retellAgentId: string | undefined;
 
-    const saved = await agent.save();
-    return {
-      ...saved.toObject(),
-      id: saved._id.toString(),
-    };
+    try {
+      // Step 1: Create LLM in Retell AI first
+      this.logger.log(`Creating LLM in Retell for agent: ${createAgentDto.name}`);
+      const retellLlm = await this.retellService.createLlm(createAgentDto);
+      retellLlmId = retellLlm.llm_id;
+      this.logger.log(`LLM created in Retell with ID: ${retellLlmId}`);
+
+      // Step 2: Create agent in Retell AI using the LLM
+      this.logger.log(`Creating agent in Retell: ${createAgentDto.name}`);
+      const retellConfig = this.retellService.convertToRetellConfig(createAgentDto, retellLlmId);
+      const retellAgent = await this.retellService.createAgent(retellConfig);
+      retellAgentId = retellAgent.agent_id;
+      this.logger.log(`Agent created in Retell with ID: ${retellAgentId}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to create agent in Retell: ${error.message}`,
+        error.stack
+      );
+      
+      // Cleanup: If LLM was created but agent creation failed, delete the LLM
+      if (retellLlmId && !retellAgentId) {
+        this.logger.warn(
+          `Attempting to delete Retell LLM ${retellLlmId} due to agent creation failure`
+        );
+        try {
+          await this.retellService.deleteLlm(retellLlmId);
+        } catch (deleteError) {
+          this.logger.error(
+            `Failed to cleanup Retell LLM: ${deleteError.message}`
+          );
+        }
+      }
+      
+      // Re-throw the error to prevent saving to database if Retell creation fails
+      throw error;
+    }
+
+    // Step 3: If Retell creation successful, save to database
+    try {
+      const agent = new this.agentModel({
+        ...createAgentDto,
+        retellAgentId,
+        retellLlmId, // Store the LLM ID as well
+        status: createAgentDto.status || "inactive",
+        calls: 0,
+        avgDuration: "0:00",
+      });
+
+      const saved = await agent.save();
+      this.logger.log(`Agent saved to database with ID: ${saved._id}`);
+      
+      return {
+        ...saved.toObject(),
+        id: saved._id.toString(),
+      };
+    } catch (error) {
+      // If database save fails, try to clean up Retell resources
+      this.logger.error(
+        `Failed to save agent to database: ${error.message}`,
+        error.stack
+      );
+      
+      // Cleanup Retell agent
+      if (retellAgentId) {
+        this.logger.warn(
+          `Attempting to delete Retell agent ${retellAgentId} due to database save failure`
+        );
+        try {
+          await this.retellService.deleteAgent(retellAgentId);
+        } catch (deleteError) {
+          this.logger.error(
+            `Failed to cleanup Retell agent: ${deleteError.message}`
+          );
+        }
+      }
+      
+      // Cleanup Retell LLM
+      if (retellLlmId) {
+        this.logger.warn(
+          `Attempting to delete Retell LLM ${retellLlmId} due to database save failure`
+        );
+        try {
+          await this.retellService.deleteLlm(retellLlmId);
+        } catch (deleteError) {
+          this.logger.error(
+            `Failed to cleanup Retell LLM: ${deleteError.message}`
+          );
+        }
+      }
+      
+      throw error;
+    }
   }
 
   async update(id: string, updateAgentDto: UpdateAgentDto) {
-    const agent = await this.agentModel.findByIdAndUpdate(
-      id,
-      { $set: updateAgentDto },
-      { new: true }
-    );
+    const agent = await this.agentModel.findById(id);
 
     if (!agent) {
       throw new NotFoundException(`Agent with ID ${id} not found`);
     }
 
-    return {
+    // Merge current agent data with updates
+    const mergedAgent = {
       ...agent.toObject(),
-      id: agent._id.toString(),
+      ...updateAgentDto,
+    };
+
+    // If agent has a Retell LLM ID, update it in Retell first
+    if (agent.retellLlmId) {
+      try {
+        this.logger.log(`Updating LLM in Retell: ${agent.retellLlmId}`);
+        
+        // Build updated LLM configuration
+        const llmUpdateParams = {
+          begin_message: mergedAgent.baseLogic?.greetingMessage || 
+                         mergedAgent.greetingScript || 
+                         `Hello! I'm ${mergedAgent.name}. How can I help you today?`,
+          general_prompt: this.retellService.buildGeneralPrompt(mergedAgent),
+        };
+        
+        await this.retellService.updateLlm(agent.retellLlmId, llmUpdateParams);
+        this.logger.log(`LLM updated in Retell successfully`);
+      } catch (error) {
+        this.logger.error(
+          `Failed to update LLM in Retell: ${error.message}`,
+          error.stack
+        );
+        // Continue with agent update even if LLM update fails
+      }
+    }
+
+    // If agent has a Retell agent ID, update it in Retell
+    if (agent.retellAgentId) {
+      try {
+        this.logger.log(`Updating agent in Retell: ${agent.retellAgentId}`);
+        
+        // Map voice configuration if updated
+        let voiceId: string | undefined;
+        if (mergedAgent.voice) {
+          if (mergedAgent.voice.type === "custom" && mergedAgent.voice.customVoiceId) {
+            voiceId = mergedAgent.voice.customVoiceId;
+          } else if (mergedAgent.voice.type === "generic" && mergedAgent.voice.genericVoice) {
+            voiceId = this.retellService.mapGenericVoiceToRetellId(mergedAgent.voice.genericVoice);
+          }
+        }
+        
+        // Only update agent-specific fields (not LLM-related)
+        const agentUpdateParams: any = {
+          agent_name: mergedAgent.name,
+        };
+        
+        if (mergedAgent.notifications?.crm?.endpoint) {
+          agentUpdateParams.webhook_url = mergedAgent.notifications.crm.endpoint;
+        }
+        
+        if (voiceId) {
+          agentUpdateParams.voice_id = voiceId;
+        }
+        
+        // Configure voicemail option if updated
+        if (mergedAgent.callRules?.fallbackToVoicemail) {
+          const voicemailMessage =
+            mergedAgent.callRules?.voicemailMessage ||
+            "Thank you for calling. Please leave a message and we'll get back to you soon.";
+          agentUpdateParams.voicemail_option = {
+            action: {
+              type: "static_text",
+              text: voicemailMessage,
+            },
+          };
+        } else if (mergedAgent.callRules?.fallbackToVoicemail === false) {
+          agentUpdateParams.voicemail_option = null;
+        }
+        
+        await this.retellService.updateAgent(agent.retellAgentId, agentUpdateParams);
+        this.logger.log(`Agent updated in Retell successfully`);
+      } catch (error) {
+        this.logger.error(
+          `Failed to update agent in Retell: ${error.message}`,
+          error.stack
+        );
+        // Continue with database update even if Retell update fails
+      }
+    }
+
+    // Update in database
+    const updated = await this.agentModel.findByIdAndUpdate(
+      id,
+      { $set: updateAgentDto },
+      { new: true }
+    );
+
+    return {
+      ...updated.toObject(),
+      id: updated._id.toString(),
     };
   }
 
@@ -99,11 +273,44 @@ export class AgentsService {
   }
 
   async remove(id: string) {
-    const agent = await this.agentModel.findByIdAndDelete(id);
+    const agent = await this.agentModel.findById(id);
 
     if (!agent) {
       throw new NotFoundException(`Agent with ID ${id} not found`);
     }
+
+    // Delete from Retell: First delete agent, then LLM
+    if (agent.retellAgentId) {
+      try {
+        this.logger.log(`Deleting agent from Retell: ${agent.retellAgentId}`);
+        await this.retellService.deleteAgent(agent.retellAgentId);
+        this.logger.log(`Agent deleted from Retell successfully`);
+      } catch (error) {
+        this.logger.error(
+          `Failed to delete agent from Retell: ${error.message}`,
+          error.stack
+        );
+        // Continue with LLM deletion even if agent deletion fails
+      }
+    }
+
+    // Delete LLM from Retell
+    if (agent.retellLlmId) {
+      try {
+        this.logger.log(`Deleting LLM from Retell: ${agent.retellLlmId}`);
+        await this.retellService.deleteLlm(agent.retellLlmId);
+        this.logger.log(`LLM deleted from Retell successfully`);
+      } catch (error) {
+        this.logger.error(
+          `Failed to delete LLM from Retell: ${error.message}`,
+          error.stack
+        );
+        // Continue with database deletion even if Retell deletion fails
+      }
+    }
+
+    // Delete from database
+    await this.agentModel.findByIdAndDelete(id);
   }
 
   private formatDate(date: Date | string): string {
