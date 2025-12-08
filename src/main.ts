@@ -17,7 +17,16 @@ async function bootstrap() {
         "http://127.0.0.1:8080",
       ];
 
+  // Get allowed origin patterns (for Vercel, Netlify, etc.)
+  const allowedPatterns = process.env.ALLOWED_ORIGIN_PATTERNS
+    ? process.env.ALLOWED_ORIGIN_PATTERNS.split(",").map((pattern) => pattern.trim())
+    : [
+        /^https:\/\/.*\.vercel\.app$/,
+        /^https:\/\/.*\.netlify\.app$/,
+      ];
+
   console.log("Allowed CORS origins:", allowedOrigins);
+  console.log("Allowed CORS patterns:", allowedPatterns);
 
   // Enable CORS with explicit configuration
   app.enableCors({
@@ -29,6 +38,18 @@ async function bootstrap() {
 
       // Check if origin is in allowed list
       if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Check if origin matches any allowed pattern
+      const matchesPattern = allowedPatterns.some((pattern) => {
+        if (pattern instanceof RegExp) {
+          return pattern.test(origin);
+        }
+        return origin.includes(pattern);
+      });
+
+      if (matchesPattern) {
         return callback(null, true);
       }
 
