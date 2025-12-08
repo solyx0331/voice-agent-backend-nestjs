@@ -106,6 +106,11 @@ export class AgentsService {
     }
   }
 
+  private formatDate(date: Date | string): string {
+    if (typeof date === "string") return date;
+    return date.toISOString().split("T")[0];
+  }
+
   async getAgentCalls(agentId: string, limit?: number) {
     const agent = await this.agentModel.findById(agentId);
 
@@ -124,10 +129,14 @@ export class AgentsService {
     }
 
     const calls = await query;
-    return calls.map((call) => ({
-      ...call.toObject(),
-      id: call._id.toString(),
-    }));
+    return calls.map((call) => {
+      const obj = call.toObject();
+      return {
+        ...obj,
+        id: call._id.toString(),
+        date: this.formatDate(call.date),
+      };
+    });
   }
 
   private getLastActive(date: Date): string {

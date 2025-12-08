@@ -16,6 +16,12 @@ export class SearchService {
     private contactModel: Model<ContactDocument>
   ) {}
 
+  private formatDate(date: Date | string | undefined): string {
+    if (!date) return "";
+    if (typeof date === "string") return date;
+    return date.toISOString().split("T")[0];
+  }
+
   async searchGlobal(query: string) {
     const queryRegex = { $regex: query, $options: "i" };
 
@@ -44,14 +50,22 @@ export class SearchService {
         ...agent.toObject(),
         id: agent._id.toString(),
       })),
-      calls: calls.map((call) => ({
-        ...call.toObject(),
-        id: call._id.toString(),
-      })),
-      contacts: contacts.map((contact) => ({
-        ...contact.toObject(),
-        id: contact._id.toString(),
-      })),
+      calls: calls.map((call) => {
+        const obj = call.toObject();
+        return {
+          ...obj,
+          id: call._id.toString(),
+          date: this.formatDate(call.date),
+        };
+      }),
+      contacts: contacts.map((contact) => {
+        const obj = contact.toObject();
+        return {
+          ...obj,
+          id: contact._id.toString(),
+          lastContact: this.formatDate(contact.lastContact),
+        };
+      }),
     };
   }
 }

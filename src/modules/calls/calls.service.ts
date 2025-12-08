@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
-import { Model } from "mongoose";
+import { Model, Types } from "mongoose";
 import { Call, CallDocument } from "../../schemas/call.schema";
 import { CreateCallDto, UpdateCallDto, CallFiltersDto } from "../../dto/call.dto";
 
@@ -10,6 +10,11 @@ export class CallsService {
     @InjectModel(Call.name)
     private callModel: Model<CallDocument>
   ) {}
+
+  private formatDate(date: Date | string): string {
+    if (typeof date === "string") return date;
+    return date.toISOString().split("T")[0];
+  }
 
   async findAll(filters?: CallFiltersDto) {
     const query: any = {};
@@ -38,10 +43,15 @@ export class CallsService {
     }
 
     const calls = await this.callModel.find(query).sort({ createdAt: -1 });
-    return calls.map((call) => ({
-      ...call.toObject(),
-      id: call._id.toString(),
-    }));
+    return calls.map((call) => {
+      const obj = call.toObject();
+      return {
+        ...obj,
+        id: call._id.toString(),
+        date: this.formatDate(call.date),
+        agentId: call.agentId?.toString(),
+      };
+    });
   }
 
   async findOne(id: string) {
@@ -51,22 +61,34 @@ export class CallsService {
       throw new NotFoundException(`Call with ID ${id} not found`);
     }
 
+    const obj = call.toObject();
     return {
-      ...call.toObject(),
+      ...obj,
       id: call._id.toString(),
+      date: this.formatDate(call.date),
+      agentId: call.agentId?.toString(),
     };
   }
 
   async create(createCallDto: CreateCallDto) {
-    const call = new this.callModel({
+    const callData: any = {
       ...createCallDto,
       date: new Date(createCallDto.date),
-    });
+    };
 
+    // Convert agentId string to ObjectId if provided
+    if (createCallDto.agentId && Types.ObjectId.isValid(createCallDto.agentId)) {
+      callData.agentId = new Types.ObjectId(createCallDto.agentId);
+    }
+
+    const call = new this.callModel(callData);
     const saved = await call.save();
+    const obj = saved.toObject();
     return {
-      ...saved.toObject(),
+      ...obj,
       id: saved._id.toString(),
+      date: this.formatDate(saved.date),
+      agentId: saved.agentId?.toString(),
     };
   }
 
@@ -81,9 +103,12 @@ export class CallsService {
       throw new NotFoundException(`Call with ID ${id} not found`);
     }
 
+    const obj = call.toObject();
     return {
-      ...call.toObject(),
+      ...obj,
       id: call._id.toString(),
+      date: this.formatDate(call.date),
+      agentId: call.agentId?.toString(),
     };
   }
 

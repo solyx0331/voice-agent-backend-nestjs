@@ -14,6 +14,12 @@ export class ContactsService {
     private callModel: Model<CallDocument>
   ) {}
 
+  private formatDate(date: Date | string | undefined): string {
+    if (!date) return "";
+    if (typeof date === "string") return date;
+    return date.toISOString().split("T")[0];
+  }
+
   async findAll(search?: string, status?: string) {
     const query: any = {};
 
@@ -31,10 +37,14 @@ export class ContactsService {
     }
 
     const contacts = await this.contactModel.find(query).sort({ createdAt: -1 });
-    return contacts.map((contact) => ({
-      ...contact.toObject(),
-      id: contact._id.toString(),
-    }));
+    return contacts.map((contact) => {
+      const obj = contact.toObject();
+      return {
+        ...obj,
+        id: contact._id.toString(),
+        lastContact: this.formatDate(contact.lastContact),
+      };
+    });
   }
 
   async findOne(id: string) {
@@ -44,9 +54,11 @@ export class ContactsService {
       throw new NotFoundException(`Contact with ID ${id} not found`);
     }
 
+    const obj = contact.toObject();
     return {
-      ...contact.toObject(),
+      ...obj,
       id: contact._id.toString(),
+      lastContact: this.formatDate(contact.lastContact),
     };
   }
 
@@ -58,9 +70,11 @@ export class ContactsService {
     });
 
     const saved = await contact.save();
+    const obj = saved.toObject();
     return {
-      ...saved.toObject(),
+      ...obj,
       id: saved._id.toString(),
+      lastContact: this.formatDate(saved.lastContact),
     };
   }
 
@@ -75,9 +89,11 @@ export class ContactsService {
       throw new NotFoundException(`Contact with ID ${id} not found`);
     }
 
+    const obj = contact.toObject();
     return {
-      ...contact.toObject(),
+      ...obj,
       id: contact._id.toString(),
+      lastContact: this.formatDate(contact.lastContact),
     };
   }
 
@@ -106,9 +122,13 @@ export class ContactsService {
       })
       .sort({ createdAt: -1 });
 
-    return calls.map((call) => ({
-      ...call.toObject(),
-      id: call._id.toString(),
-    }));
+    return calls.map((call) => {
+      const obj = call.toObject();
+      return {
+        ...obj,
+        id: call._id.toString(),
+        date: this.formatDate(call.date),
+      };
+    });
   }
 }
