@@ -33,6 +33,8 @@ import { SearchModule } from "./modules/search/search.module";
           process.env.DB_NAME || 
           configService.get<string>("DB_NAME") || 
           "voice_ai_agent";
+        
+        console.log("databaseUrl  ==>", databaseUrl);
 
         if (databaseUrl) {
           // Ensure database name is included in the connection string

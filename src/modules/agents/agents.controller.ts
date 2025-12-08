@@ -18,6 +18,7 @@ export class AgentsController {
 
   @Get()
   async findAll() {
+    console.log("findAll ==> ");
     return this.agentsService.findAll();
   }
 

@@ -12,6 +12,7 @@ export class DashboardController {
 
   @Get("agents")
   async getVoiceAgents() {
+    console.log("getVoiceAgents ==> ", await this.dashboardService.getVoiceAgents());
     return this.dashboardService.getVoiceAgents();
   }
 
