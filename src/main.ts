@@ -15,6 +15,7 @@ async function bootstrap() {
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:8080",
+        "https://voice-agent-phi-ten.vercel.app/"
       ];
 
   // Get allowed origin patterns (for Vercel, Netlify, etc.)
