@@ -16,8 +16,14 @@ import { SearchModule } from "./modules/search/search.module";
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      // In production (Railway), ignore .env file and use environment variables directly
+      // In development, try to load from .env file if it exists
       envFilePath: process.env.NODE_ENV === "production" ? undefined : ".env",
       ignoreEnvFile: process.env.NODE_ENV === "production",
+      // Always load from process.env (Railway injects variables here)
+      load: [],
+      // Expand variables (useful for Railway)
+      expandVariables: true,
     }),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
@@ -25,31 +31,37 @@ import { SearchModule } from "./modules/search/search.module";
         // Log all database-related environment variables for debugging
         console.log("=== Database Configuration Debug ===");
         console.log("NODE_ENV:", process.env.NODE_ENV);
-        console.log("DATABASE_URL from process.env:", process.env.DATABASE_URL ? "SET" : "NOT SET");
-        console.log("DATABASE_URL from configService:", configService.get<string>("DATABASE_URL") ? "SET" : "NOT SET");
-        console.log("DB_HOST:", configService.get<string>("DB_HOST"));
-        console.log("DB_NAME:", configService.get<string>("DB_NAME"));
         
-        // Try to get DATABASE_URL from configService first, then fallback to process.env
-        // Also check Railway-specific MongoDB variables
+        // Log all environment variables that might contain database connection info
+        const dbRelatedVars = [
+          "DATABASE_URL",
+          "MONGO_URL",
+          "MONGODB_URI",
+          "MONGODB_URL",
+          "DB_HOST",
+          "DB_NAME",
+          "DB_USERNAME",
+          "DB_PASSWORD",
+        ];
+        
+        console.log("--- Environment Variables Check ---");
+        dbRelatedVars.forEach((varName) => {
+          const value = process.env[varName];
+          console.log(`${varName}:`, value ? (varName.includes("PASSWORD") ? "***HIDDEN***" : value.substring(0, 50)) : "NOT SET");
+        });
+        
+        console.log("DATABASE_URL from configService:", configService.get<string>("DATABASE_URL") ? "SET" : "NOT SET");
+        
+        // Try to get DATABASE_URL from process.env first (Railway injects here)
+        // Then check configService, then check Railway-specific MongoDB variables
         let databaseUrl = 
-          configService.get<string>("DATABASE_URL") ||
           process.env.DATABASE_URL ||
+          configService.get<string>("DATABASE_URL") ||
           process.env.MONGO_URL ||
           process.env.MONGODB_URI ||
           process.env.MONGODB_URL;
         
-        if (!databaseUrl) {
-          console.log("Checking Railway MongoDB service variables...");
-          // Railway MongoDB service provides MONGO_URL
-          const mongoUrl = process.env.MONGO_URL;
-          if (mongoUrl) {
-            databaseUrl = mongoUrl;
-            console.log("Using MONGO_URL from Railway service");
-          }
-        }
-        
-        console.log("Final databaseUrl:", databaseUrl ? `${databaseUrl.substring(0, 30)}...` : "undefined");
+        console.log("Final databaseUrl:", databaseUrl ? `${databaseUrl.substring(0, 50)}...` : "undefined");
         
         // Use DATABASE_URL if provided, otherwise construct from individual config
         if (databaseUrl) {
