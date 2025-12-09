@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from "@nestjs/common";
+import { Injectable, NotFoundException, Logger, HttpException, HttpStatus } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { VoiceAgent, VoiceAgentDocument } from "../../schemas/voice-agent.schema";
@@ -57,19 +57,56 @@ export class AgentsService {
     let retellLlmId: string | undefined;
     let retellAgentId: string | undefined;
 
+    // Step 1: Create LLM in Retell AI first
+    // If this fails, the entire operation fails and nothing is saved
     try {
-      // Step 1: Create LLM in Retell AI first
       this.logger.log(`Creating LLM in Retell for agent: ${createAgentDto.name}`);
       const retellLlm = await this.retellService.createLlm(createAgentDto);
       retellLlmId = retellLlm.llm_id;
       this.logger.log(`LLM created in Retell with ID: ${retellLlmId}`);
 
+      // Validate LLM ID was created
+      if (!retellLlmId) {
+        throw new Error("LLM ID was not returned from Retell API");
+      }
+
+      // Verify LLM exists and is ready before creating agent
+      this.logger.log(`Verifying LLM is ready before creating agent...`);
+      let llmReady = false;
+      let attempts = 0;
+      const maxAttempts = 5;
+      
+      while (!llmReady && attempts < maxAttempts) {
+        attempts++;
+        this.logger.log(`Verifying LLM attempt ${attempts}/${maxAttempts}...`);
+        llmReady = await this.retellService.verifyLlmExists(retellLlmId);
+        
+        if (!llmReady && attempts < maxAttempts) {
+          const delay = attempts * 500; // Increasing delay: 500ms, 1000ms, 1500ms, etc.
+          this.logger.log(`LLM not ready yet, waiting ${delay}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+      
+      if (!llmReady) {
+        throw new Error(`LLM ${retellLlmId} is not accessible after ${maxAttempts} attempts. Please verify the LLM was created successfully.`);
+      }
+      
+      this.logger.log(`LLM verified and ready. Proceeding with agent creation...`);
+
       // Step 2: Create agent in Retell AI using the LLM
       this.logger.log(`Creating agent in Retell: ${createAgentDto.name}`);
-      const retellConfig = this.retellService.convertToRetellConfig(createAgentDto, retellLlmId);
+      this.logger.log(`Using LLM ID: ${retellLlmId}`);
+      const retellConfig = await this.retellService.convertToRetellConfig(createAgentDto, retellLlmId);
+      this.logger.log(`Retell agent config prepared with voice_id: ${retellConfig.voice_id}`);
       const retellAgent = await this.retellService.createAgent(retellConfig);
       retellAgentId = retellAgent.agent_id;
       this.logger.log(`Agent created in Retell with ID: ${retellAgentId}`);
+
+      // Validate agent ID was created
+      if (!retellAgentId) {
+        throw new Error("Agent ID was not returned from Retell API");
+      }
     } catch (error) {
       this.logger.error(
         `Failed to create agent in Retell: ${error.message}`,
@@ -90,11 +127,15 @@ export class AgentsService {
         }
       }
       
-      // Re-throw the error to prevent saving to database if Retell creation fails
-      throw error;
+      // Re-throw the error to prevent saving to database
+      // Agent creation fails if Retell creation fails
+      throw new HttpException(
+        `Failed to create agent in Retell: ${error.message || "Unknown error"}`,
+        error.status || error.statusCode || HttpStatus.INTERNAL_SERVER_ERROR
+      );
     }
 
-    // Step 3: If Retell creation successful, save to database
+    // Step 3: Only save to database if Retell creation was successful
     try {
       const agent = new this.agentModel({
         ...createAgentDto,

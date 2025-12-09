@@ -11,6 +11,7 @@ import { ContactsModule } from "./modules/contacts/contacts.module";
 import { SettingsModule } from "./modules/settings/settings.module";
 import { UploadModule } from "./modules/upload/upload.module";
 import { SearchModule } from "./modules/search/search.module";
+import { VoicesModule } from "./modules/voices/voices.module";
 
 @Module({
   imports: [
@@ -90,6 +91,7 @@ import { SearchModule } from "./modules/search/search.module";
     SettingsModule,
     UploadModule,
     SearchModule,
+    VoicesModule,
   ],
 })
 export class AppModule {}

@@ -17,21 +17,24 @@ export class RetellService {
   private readonly logger = new Logger(RetellService.name);
   private readonly client: Retell;
 
+  private readonly apiKey: string;
+
   constructor(private configService: ConfigService) {
-    const apiKey =
+    this.apiKey =
       process.env.RETELL_API_KEY ||
       this.configService.get<string>("RETELL_API_KEY") ||
       "";
 
-    if (!apiKey) {
+    if (!this.apiKey) {
       this.logger.warn(
         "RETELL_API_KEY not found. Retell integration will not work."
       );
     }
 
+    this.logger.log(`Retell API Key: ${this.apiKey}`);
     // Initialize Retell SDK client
     this.client = new Retell({
-      apiKey: apiKey,
+      apiKey: this.apiKey,
     });
   }
 
@@ -41,6 +44,13 @@ export class RetellService {
    * @returns Retell LLM ID and details
    */
   async createLlm(createAgentDto: any): Promise<LlmResponse> {
+    if (!this.apiKey) {
+      throw new HttpException(
+        "RETELL_API_KEY is not configured. Please set RETELL_API_KEY environment variable.",
+        HttpStatus.UNAUTHORIZED
+      );
+    }
+
     try {
       this.logger.log(`Creating Retell LLM for agent: ${createAgentDto.name}`);
 
@@ -64,6 +74,8 @@ export class RetellService {
         model_temperature: 0.2,
       };
 
+      this.logger.debug(`LLM config: ${JSON.stringify(llmConfig, null, 2)}`);
+
       // Use Retell SDK to create LLM
       const llmResponse = await this.client.llm.create(llmConfig);
 
@@ -74,6 +86,14 @@ export class RetellService {
         `Error creating Retell LLM: ${error.message}`,
         error.stack
       );
+
+      // Log more details about the error
+      if (error.response) {
+        this.logger.error(`Retell API response: ${JSON.stringify(error.response, null, 2)}`);
+      }
+      if (error.status || error.statusCode) {
+        this.logger.error(`HTTP Status: ${error.status || error.statusCode}`);
+      }
 
       // Handle SDK errors
       if (error.status || error.statusCode) {
@@ -234,16 +254,177 @@ export class RetellService {
   }
 
   /**
+   * Verify that an LLM exists and is ready
+   * @param llmId The LLM ID to verify
+   * @returns True if LLM exists and is ready
+   */
+  async verifyLlmExists(llmId: string): Promise<boolean> {
+    if (!this.apiKey) {
+      return false;
+    }
+
+    try {
+      this.logger.log(`Verifying LLM exists: ${llmId}`);
+      const llm = await this.client.llm.retrieve(llmId);
+      this.logger.log(`LLM verified successfully: ${llm.llm_id}`);
+      return true;
+    } catch (error: any) {
+      this.logger.error(`LLM verification failed: ${error.message}`);
+      if (error.status === 404 || error.statusCode === 404) {
+        this.logger.error(`LLM ${llmId} does not exist or was deleted`);
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Verify that a voice ID exists in the Retell account
+   * @param voiceId The voice ID to verify
+   * @returns True if voice exists, false otherwise
+   */
+  async verifyVoiceExists(voiceId: string): Promise<boolean> {
+    if (!this.apiKey) {
+      return false;
+    }
+
+    try {
+      this.logger.log(`Verifying voice exists: ${voiceId}`);
+      const voice = await this.client.voice.retrieve(voiceId);
+      this.logger.log(`Voice verified successfully: ${voice.voice_id} (${voice.voice_name} from ${voice.provider})`);
+      return true;
+    } catch (error: any) {
+      this.logger.error(`Voice verification failed: ${error.message}`);
+      if (error.status === 404 || error.statusCode === 404) {
+        this.logger.error(`Voice ID "${voiceId}" does not exist in your Retell account`);
+      }
+      return false;
+    }
+  }
+
+  /**
+   * List all available voices in the Retell account
+   * @returns Array of available voices with display names
+   */
+  async listAvailableVoices(): Promise<Array<{ 
+    voice_id: string; 
+    voice_name: string; 
+    provider: string;
+    display_name: string; // Format: "Provider - VoiceName" for frontend display
+  }>> {
+    if (!this.apiKey) {
+      this.logger.warn("Cannot list voices: RETELL_API_KEY not configured");
+      return [];
+    }
+
+    try {
+      this.logger.log("Fetching available voices from Retell...");
+      const voices = await this.client.voice.list();
+      this.logger.log(`Found ${voices.length} available voices`);
+      
+      // Map provider names to display format (capitalize first letter of each word)
+      const providerDisplayMap: Record<string, string> = {
+        'elevenlabs': 'ElevenLabs',
+        'openai': 'OpenAI',
+        'deepgram': 'Deepgram',
+        'cartesia': 'Cartesia',
+        'minimax': 'Minimax',
+      };
+      
+      return voices.map(v => {
+        // Get display name from map, or capitalize provider name
+        const providerDisplay = providerDisplayMap[v.provider] || 
+          v.provider.charAt(0).toUpperCase() + v.provider.slice(1);
+        
+        return {
+          voice_id: v.voice_id,
+          voice_name: v.voice_name,
+          provider: v.provider,
+          display_name: `${providerDisplay} - ${v.voice_name}`,
+        };
+      });
+    } catch (error: any) {
+      this.logger.error(`Failed to list voices: ${error.message}`);
+      return [];
+    }
+  }
+
+  /**
    * Create an agent in Retell AI using the Retell SDK
    * Reference: https://docs.retellai.com/api-references/create-agent
    * @param config Agent configuration
    * @returns Retell agent ID and details
    */
   async createAgent(config: AgentCreateParams): Promise<AgentResponse> {
+    if (!this.apiKey) {
+      throw new HttpException(
+        "RETELL_API_KEY is not configured. Please set RETELL_API_KEY environment variable.",
+        HttpStatus.UNAUTHORIZED
+      );
+    }
+
     try {
       this.logger.log(`Creating Retell agent: ${config.agent_name || "Unnamed"}`);
+      this.logger.debug(`Agent config: ${JSON.stringify(config, null, 2)}`);
+
+      // Validate required fields
+      if (!config.response_engine || 
+          (config.response_engine.type === "retell-llm" && !(config.response_engine as any).llm_id)) {
+        throw new HttpException(
+          "LLM ID is required in response_engine.llm_id",
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      if (!config.voice_id) {
+        throw new HttpException(
+          "voice_id is required",
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      const llmId = (config.response_engine as any).llm_id;
+      this.logger.log(`Creating agent with LLM ID: ${llmId}, Voice ID: ${config.voice_id}`);
+
+      // Verify LLM exists before creating agent
+      const llmExists = await this.verifyLlmExists(llmId);
+      if (!llmExists) {
+        throw new HttpException(
+          `LLM ${llmId} does not exist or is not accessible. Please verify the LLM was created successfully.`,
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      // Verify voice ID exists before creating agent
+      const voiceExists = await this.verifyVoiceExists(config.voice_id);
+      if (!voiceExists) {
+        // List available voices to help user choose a valid one
+        const availableVoices = await this.listAvailableVoices();
+        const voiceList = availableVoices.length > 0 
+          ? `\nAvailable voices in your account:\n${availableVoices.map(v => `  - ${v.voice_id} (${v.voice_name} from ${v.provider})`).join('\n')}`
+          : '\nCould not fetch available voices. Please check your Retell dashboard.';
+        
+        throw new HttpException(
+          `Voice ID "${config.voice_id}" does not exist in your Retell account.${voiceList}`,
+          HttpStatus.BAD_REQUEST
+        );
+      }
 
       // Use Retell SDK to create agent
+      // According to Retell API docs: https://docs.retellai.com/api-references/create-agent
+      // The structure should be: { response_engine: { llm_id: '...', type: 'retell-llm' }, voice_id: '...' }
+
+      this.logger.log(`Creating agent with config: ${JSON.stringify(config, null, 2)}`);
+      
+      // Log the exact structure being sent
+      this.logger.log(`Request structure check:`);
+      this.logger.log(`  - response_engine.type: ${(config.response_engine as any)?.type}`);
+      this.logger.log(`  - response_engine.llm_id: ${(config.response_engine as any)?.llm_id}`);
+      this.logger.log(`  - voice_id: ${config.voice_id}`);
+      this.logger.log(`  - agent_name: ${config.agent_name}`);
+      this.logger.log(`  - language: ${config.language}`);
+      
+      // Try to create the agent
+      this.logger.log(`Calling Retell SDK agent.create()...`);
       const agentResponse = await this.client.agent.create(config);
 
       this.logger.log(`Retell agent created successfully: ${agentResponse.agent_id}`);
@@ -253,6 +434,98 @@ export class RetellService {
         `Error creating Retell agent: ${error.message}`,
         error.stack
       );
+      this.logger.error(`Failed config: ${JSON.stringify(config, null, 2)}`);
+
+      // Log the full error object to see all available properties
+      this.logger.error(`Full error object: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`);
+
+      // Log more details about the error
+      if (error.response) {
+        this.logger.error(`Retell API response: ${JSON.stringify(error.response, null, 2)}`);
+      }
+      if (error.body) {
+        this.logger.error(`Retell API error body: ${JSON.stringify(error.body, null, 2)}`);
+      }
+      if (error.data) {
+        this.logger.error(`Retell API error data: ${JSON.stringify(error.data, null, 2)}`);
+      }
+      if (error.status || error.statusCode) {
+        this.logger.error(`HTTP Status: ${error.status || error.statusCode}`);
+      }
+      
+      // Log request details if available
+      if (error.request) {
+        this.logger.error(`Request details: ${JSON.stringify(error.request, null, 2)}`);
+      }
+      
+      // If 404, provide more specific guidance
+      if (error.status === 404 || error.statusCode === 404) {
+        const llmId = (config.response_engine as any)?.llm_id;
+        
+        // Try to extract the URL from the error if available
+        let errorUrl = 'unknown';
+        if (error.url) errorUrl = error.url;
+        else if (error.request?.url) errorUrl = error.request.url;
+        else if (error.config?.url) errorUrl = error.config.url;
+        
+        // Verify LLM exists
+        let llmVerified = false;
+        try {
+          llmVerified = await this.verifyLlmExists(llmId);
+        } catch (verifyError) {
+          this.logger.error(`Could not verify LLM: ${verifyError}`);
+        }
+        
+        // Verify voice exists
+        let voiceVerified = false;
+        let availableVoices: Array<{ voice_id: string; voice_name: string; provider: string }> = [];
+        try {
+          voiceVerified = await this.verifyVoiceExists(config.voice_id);
+          if (!voiceVerified) {
+            // If voice doesn't exist, list available voices
+            availableVoices = await this.listAvailableVoices();
+          }
+        } catch (verifyError) {
+          this.logger.error(`Could not verify voice: ${verifyError}`);
+        }
+        
+        this.logger.error(
+          `404 Not Found - Detailed Analysis:\n` +
+          `  Request URL: ${errorUrl}\n` +
+          `  LLM ID: "${llmId}" (verified: ${llmVerified})\n` +
+          `  Voice ID: "${config.voice_id}" (verified: ${voiceVerified})\n` +
+          `  Agent Name: "${config.agent_name}"\n` +
+          `  Language: "${config.language}"\n` +
+          `  Response Engine Type: "${(config.response_engine as any)?.type}"\n` +
+          `\nPossible causes:\n` +
+          `  1. ${!voiceVerified ? `❌ Voice ID "${config.voice_id}" does NOT exist in your account` : 'Voice ID is valid'}\n` +
+          `  2. ${!llmVerified ? `❌ LLM ID "${llmId}" does NOT exist or is not accessible` : 'LLM ID is valid'}\n` +
+          `  3. API endpoint path might be incorrect (expected: /create-agent)\n` +
+          `  4. SDK version might be outdated (current: retell-sdk@4.66.0)\n` +
+          `  5. API might require different endpoint structure\n` +
+          `  6. Check Retell API documentation: https://docs.retellai.com/api-references/create-agent`
+        );
+        
+        // If voice doesn't exist, show available voices
+        if (!voiceVerified && availableVoices.length > 0) {
+          this.logger.error(`\nAvailable voices in your Retell account:`);
+          availableVoices.forEach(v => {
+            this.logger.error(`  - ${v.voice_id} (${v.voice_name} from ${v.provider})`);
+          });
+        }
+        
+        // Log the exact request payload structure
+        this.logger.error(`\nExact request payload structure:`);
+        this.logger.error(JSON.stringify({
+          response_engine: {
+            type: (config.response_engine as any)?.type,
+            llm_id: (config.response_engine as any)?.llm_id,
+          },
+          voice_id: config.voice_id,
+          agent_name: config.agent_name,
+          language: config.language,
+        }, null, 2));
+      }
 
       // Handle SDK errors
       if (error.status || error.statusCode) {
@@ -344,13 +617,39 @@ export class RetellService {
   }
 
   /**
+   * Map display name (e.g., "ElevenLabs - Aria") to Retell voice_id
+   * @param displayName The display name from frontend
+   * @returns The Retell voice_id
+   */
+  async mapDisplayNameToVoiceId(displayName: string): Promise<string> {
+    try {
+      const voices = await this.listAvailableVoices();
+      const voice = voices.find(v => v.display_name === displayName);
+      
+      if (voice) {
+        this.logger.log(`Mapped display name "${displayName}" to voice_id "${voice.voice_id}"`);
+        return voice.voice_id;
+      }
+      
+      // Fallback to old mapping if not found
+      this.logger.warn(`Display name "${displayName}" not found in Retell voices, using fallback mapping`);
+      return this.mapGenericVoiceToRetellId(displayName);
+    } catch (error) {
+      this.logger.error(`Failed to map display name to voice_id: ${error.message}`);
+      // Fallback to old mapping
+      return this.mapGenericVoiceToRetellId(displayName);
+    }
+  }
+
+  /**
    * Convert our agent DTO to Retell agent configuration
    * Based on Retell API documentation: https://docs.retellai.com/api-references/create-agent
+   * Simplified to only include essential fields for cleaner request body
    * @param createAgentDto Agent DTO from frontend
    * @param llmId The Retell LLM ID to use (created dynamically)
    * @returns Retell agent configuration
    */
-  convertToRetellConfig(createAgentDto: any, llmId: string): AgentCreateParams {
+  async convertToRetellConfig(createAgentDto: any, llmId: string): Promise<AgentCreateParams> {
     if (!llmId) {
       throw new HttpException(
         "LLM ID is required. Please create a Retell LLM first.",
@@ -358,39 +657,40 @@ export class RetellService {
       );
     }
 
-    // Required fields
+    // Essential fields only - clean and simple
     const config: AgentCreateParams = {
       response_engine: {
         type: "retell-llm",
-        llm_id: llmId, // Use the dynamically created LLM ID
+        llm_id: llmId,
       },
       voice_id: "", // Will be set below
-      agent_name: createAgentDto.name,
-      language: "en-US", // Default language - must be a valid language code
+      agent_name: createAgentDto.name || null,
+      language: createAgentDto.language || "en-US",
     };
 
-    // Map voice configuration - voice_id is required
+    // Map voice_id from voice configuration
     if (createAgentDto.voice) {
       if (createAgentDto.voice.type === "custom" && createAgentDto.voice.customVoiceId) {
         config.voice_id = createAgentDto.voice.customVoiceId;
       } else if (createAgentDto.voice.type === "generic" && createAgentDto.voice.genericVoice) {
-        // Map generic voice name to Retell voice ID
-        config.voice_id = this.mapGenericVoiceToRetellId(createAgentDto.voice.genericVoice);
+        // The genericVoice now contains the display_name (e.g., "ElevenLabs - Aria")
+        // We need to look up the actual voice_id from Retell
+        config.voice_id = await this.mapDisplayNameToVoiceId(createAgentDto.voice.genericVoice);
       }
     }
 
     // If no voice_id is set, use a default
     if (!config.voice_id) {
-      config.voice_id = "11labs-Adrian"; // Default Retell voice
+      config.voice_id = "11labs-Adrian";
       this.logger.warn("No voice_id specified, using default: 11labs-Adrian");
     }
 
-    // Set webhook URL if notifications are configured
+    // Only include webhook if explicitly provided
     if (createAgentDto.notifications?.crm?.endpoint) {
       config.webhook_url = createAgentDto.notifications.crm.endpoint;
     }
 
-    // Configure voicemail option if enabled
+    // Only include voicemail if explicitly enabled
     if (createAgentDto.callRules?.fallbackToVoicemail) {
       const voicemailMessage =
         createAgentDto.callRules?.voicemailMessage ||
@@ -402,21 +702,7 @@ export class RetellService {
           text: voicemailMessage,
         },
       };
-    } else {
-      config.voicemail_option = null; // Disable voicemail detection
     }
-
-    // Set optional configuration
-    config.normalize_for_speech = true; // Normalize numbers, dates, etc. for better speech
-    config.stt_mode = "fast"; // Use fast mode for lower latency
-    config.vocab_specialization = "general"; // Use general vocabulary
-
-    // Set call duration limits (optional)
-    config.end_call_after_silence_ms = 600000; // 10 minutes default
-    config.max_call_duration_ms = 3600000; // 1 hour default
-
-    // Set begin message delay if needed
-    config.begin_message_delay_ms = 1000; // 1 second delay
 
     return config;
   }
