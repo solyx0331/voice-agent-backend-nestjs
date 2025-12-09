@@ -22,7 +22,11 @@ export class DashboardService {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const [totalCallsToday, activeAgents, allCalls] = await Promise.all([
+    // Calculate yesterday's date range
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const [totalCallsToday, activeAgents, allCallsToday, allCallsYesterday] = await Promise.all([
       this.callModel.countDocuments({
         createdAt: { $gte: today, $lt: tomorrow },
       }),
@@ -30,44 +34,77 @@ export class DashboardService {
       this.callModel.find({
         createdAt: { $gte: today, $lt: tomorrow },
       }),
+      this.callModel.find({
+        createdAt: { $gte: yesterday, $lt: today },
+      }),
     ]);
 
-    // Calculate average duration
-    const durations = allCalls
-      .map((call) => {
-        const [minutes, seconds] = call.duration.split(":").map(Number);
-        return minutes * 60 + seconds;
-      })
-      .filter((d) => !isNaN(d));
+    // Helper function to calculate average duration in seconds
+    const calculateAvgDurationSeconds = (calls: CallDocument[]): number => {
+      const durations = calls
+        .map((call) => {
+          const [minutes, seconds] = call.duration.split(":").map(Number);
+          return minutes * 60 + seconds;
+        })
+        .filter((d) => !isNaN(d));
 
-    const avgSeconds =
-      durations.length > 0
+      return durations.length > 0
         ? durations.reduce((a, b) => a + b, 0) / durations.length
         : 0;
-    const avgMinutes = Math.floor(avgSeconds / 60);
-    const avgSecs = Math.floor(avgSeconds % 60);
+    };
+
+    // Helper function to calculate success rate
+    const calculateSuccessRate = (calls: CallDocument[]): number => {
+      if (calls.length === 0) return 0;
+      const successfulCalls = calls.filter(
+        (call) => call.outcome === "success"
+      ).length;
+      return (successfulCalls / calls.length) * 100;
+    };
+
+    // Calculate today's metrics
+    const avgSecondsToday = calculateAvgDurationSeconds(allCallsToday);
+    const avgMinutes = Math.floor(avgSecondsToday / 60);
+    const avgSecs = Math.floor(avgSecondsToday % 60);
     const avgDuration = `${avgMinutes}:${avgSecs.toString().padStart(2, "0")}`;
+    const successRateToday = calculateSuccessRate(allCallsToday);
 
-    // Calculate success rate
-    const successfulCalls = allCalls.filter(
-      (call) => call.outcome === "success"
-    ).length;
-    const successRate =
-      allCalls.length > 0 ? (successfulCalls / allCalls.length) * 100 : 0;
+    // Calculate yesterday's metrics
+    const totalCallsYesterday = allCallsYesterday.length;
+    const avgSecondsYesterday = calculateAvgDurationSeconds(allCallsYesterday);
+    const successRateYesterday = calculateSuccessRate(allCallsYesterday);
 
-    // Calculate changes (mock for now)
-    const callsChange = 12.5;
-    const durationChange = -5.2;
-    const successRateChange = 2.1;
+    // Calculate percentage changes
+    // Formula: ((today - yesterday) / yesterday) * 100
+    const callsChange =
+      totalCallsYesterday > 0
+        ? ((totalCallsToday - totalCallsYesterday) / totalCallsYesterday) * 100
+        : totalCallsToday > 0
+        ? 100 // If yesterday had 0 calls and today has calls, it's 100% increase
+        : 0; // If both are 0, no change
+
+    const durationChange =
+      avgSecondsYesterday > 0
+        ? ((avgSecondsToday - avgSecondsYesterday) / avgSecondsYesterday) * 100
+        : avgSecondsToday > 0
+        ? 100 // If yesterday had 0 duration and today has duration, it's 100% increase
+        : 0; // If both are 0, no change
+
+    const successRateChange =
+      successRateYesterday > 0
+        ? successRateToday - successRateYesterday
+        : successRateToday > 0
+        ? successRateToday // If yesterday had 0% and today has a rate, use today's rate as change
+        : 0; // If both are 0, no change
 
     return {
       totalCallsToday,
       activeAgents,
       avgCallDuration: avgDuration,
-      successRate: Math.round(successRate * 10) / 10,
-      callsChange,
-      durationChange,
-      successRateChange,
+      successRate: Math.round(successRateToday * 10) / 10,
+      callsChange: Math.round(callsChange * 10) / 10,
+      durationChange: Math.round(durationChange * 10) / 10,
+      successRateChange: Math.round(successRateChange * 10) / 10,
     };
   }
 
