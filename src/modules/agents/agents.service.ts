@@ -5,6 +5,7 @@ import { VoiceAgent, VoiceAgentDocument } from "../../schemas/voice-agent.schema
 import { Call, CallDocument } from "../../schemas/call.schema";
 import { CreateAgentDto, UpdateAgentDto } from "../../dto/agent.dto";
 import { RetellService } from "../../services/retell.service";
+import { TwilioService } from "../../services/twilio.service";
 
 @Injectable()
 export class AgentsService {
@@ -15,7 +16,8 @@ export class AgentsService {
     private agentModel: Model<VoiceAgentDocument>,
     @InjectModel(Call.name)
     private callModel: Model<CallDocument>,
-    private retellService: RetellService
+    private retellService: RetellService,
+    private twilioService: TwilioService
   ) {}
 
   async findAll() {
@@ -56,6 +58,8 @@ export class AgentsService {
   async create(createAgentDto: CreateAgentDto) {
     let retellLlmId: string | undefined;
     let retellAgentId: string | undefined;
+    let twilioPhoneNumberSid: string | undefined;
+    let twilioPhoneNumber: string | undefined;
 
     // Step 1: Create LLM in Retell AI first
     // If this fails, the entire operation fails and nothing is saved
@@ -135,35 +139,23 @@ export class AgentsService {
       );
     }
 
-    // Step 3: Only save to database if Retell creation was successful
+    // Step 3: Get or purchase Australian Twilio phone number
     try {
-      const agent = new this.agentModel({
-        ...createAgentDto,
-        retellAgentId,
-        retellLlmId, // Store the LLM ID as well
-        status: createAgentDto.status || "inactive",
-        calls: 0,
-        avgDuration: "0:00",
-      });
-
-      const saved = await agent.save();
-      this.logger.log(`Agent saved to database with ID: ${saved._id}`);
-      
-      return {
-        ...saved.toObject(),
-        id: saved._id.toString(),
-      };
+      this.logger.log(`Getting Twilio phone number for agent: ${createAgentDto.name}`);
+      const twilioNumber = await this.twilioService.getOrPurchasePhoneNumber();
+      twilioPhoneNumberSid = twilioNumber.phoneNumberSid;
+      twilioPhoneNumber = twilioNumber.phoneNumber;
+      this.logger.log(`Twilio phone number configured: ${twilioPhoneNumber} (SID: ${twilioPhoneNumberSid})`);
     } catch (error) {
-      // If database save fails, try to clean up Retell resources
       this.logger.error(
-        `Failed to save agent to database: ${error.message}`,
+        `Failed to purchase Twilio phone number: ${error.message}`,
         error.stack
       );
       
-      // Cleanup Retell agent
+      // Cleanup Retell resources if Twilio number setup fails
       if (retellAgentId) {
         this.logger.warn(
-          `Attempting to delete Retell agent ${retellAgentId} due to database save failure`
+          `Attempting to delete Retell agent ${retellAgentId} due to Twilio number setup failure`
         );
         try {
           await this.retellService.deleteAgent(retellAgentId);
@@ -174,11 +166,74 @@ export class AgentsService {
         }
       }
       
-      // Cleanup Retell LLM
       if (retellLlmId) {
         this.logger.warn(
-          `Attempting to delete Retell LLM ${retellLlmId} due to database save failure`
+          `Attempting to delete Retell LLM ${retellLlmId} due to Twilio purchase failure`
         );
+        try {
+          await this.retellService.deleteLlm(retellLlmId);
+        } catch (deleteError) {
+          this.logger.error(
+            `Failed to cleanup Retell LLM: ${deleteError.message}`
+          );
+        }
+      }
+      
+      throw new HttpException(
+        `Failed to purchase Twilio phone number: ${error.message || "Unknown error"}`,
+        error.status || error.statusCode || HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+
+    // Step 4: Save agent to database first to get agent ID for webhook configuration
+    let savedAgentId: string;
+    try {
+      const agent = new this.agentModel({
+        ...createAgentDto,
+        retellAgentId,
+        retellLlmId,
+        phoneNumber: twilioPhoneNumber,
+        twilioPhoneNumberSid: twilioPhoneNumberSid,
+        status: createAgentDto.status || "inactive",
+        calls: 0,
+        avgDuration: "0:00",
+      });
+
+      const saved = await agent.save();
+      savedAgentId = saved._id.toString();
+      this.logger.log(`Agent saved to database with ID: ${savedAgentId}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to save agent to database: ${error.message}`,
+        error.stack
+      );
+      
+      // Cleanup Twilio number if database save fails
+      if (twilioPhoneNumberSid) {
+        this.logger.warn(
+          `Attempting to release Twilio number ${twilioPhoneNumberSid} due to database save failure`
+        );
+        try {
+          await this.twilioService.releasePhoneNumber(twilioPhoneNumberSid);
+        } catch (deleteError) {
+          this.logger.error(
+            `Failed to cleanup Twilio number: ${deleteError.message}`
+          );
+        }
+      }
+      
+      // Cleanup Retell resources
+      if (retellAgentId) {
+        try {
+          await this.retellService.deleteAgent(retellAgentId);
+        } catch (deleteError) {
+          this.logger.error(
+            `Failed to cleanup Retell agent: ${deleteError.message}`
+          );
+        }
+      }
+      
+      if (retellLlmId) {
         try {
           await this.retellService.deleteLlm(retellLlmId);
         } catch (deleteError) {
@@ -190,6 +245,48 @@ export class AgentsService {
       
       throw error;
     }
+
+    // Step 5: Configure webhook for the Twilio phone number
+    let webhookUrl: string | undefined;
+    try {
+      this.logger.log(`Configuring webhook for Twilio number: ${twilioPhoneNumberSid}`);
+      const webhookConfig = await this.twilioService.configureWebhook(
+        twilioPhoneNumberSid!,
+        savedAgentId
+      );
+      webhookUrl = webhookConfig.webhookUrl;
+      this.logger.log(`Webhook configured: ${webhookUrl}`);
+      
+      // Update agent with webhook URL
+      await this.agentModel.findByIdAndUpdate(savedAgentId, {
+        webhookUrl: webhookUrl,
+      });
+      this.logger.log(`Agent updated with webhook URL`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to configure Twilio webhook: ${error.message}`,
+        error.stack
+      );
+      // Don't fail the entire operation - agent is created, just webhook config failed
+      // Log warning but continue
+      this.logger.warn(
+        `Agent created but webhook configuration failed. You may need to configure it manually.`
+      );
+    }
+
+    // Step 6: Return the complete agent data
+    const finalAgent = await this.agentModel.findById(savedAgentId);
+    if (!finalAgent) {
+      throw new HttpException(
+        "Agent was created but could not be retrieved",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+
+    return {
+      ...finalAgent.toObject(),
+      id: finalAgent._id.toString(),
+    };
   }
 
   async update(id: string, updateAgentDto: UpdateAgentDto) {
@@ -318,6 +415,21 @@ export class AgentsService {
 
     if (!agent) {
       throw new NotFoundException(`Agent with ID ${id} not found`);
+    }
+
+    // Release Twilio phone number if exists
+    if (agent.twilioPhoneNumberSid) {
+      try {
+        this.logger.log(`Releasing Twilio phone number: ${agent.twilioPhoneNumberSid}`);
+        await this.twilioService.releasePhoneNumber(agent.twilioPhoneNumberSid);
+        this.logger.log(`Twilio phone number released successfully`);
+      } catch (error) {
+        this.logger.error(
+          `Failed to release Twilio phone number: ${error.message}`,
+          error.stack
+        );
+        // Continue with deletion even if Twilio release fails
+      }
     }
 
     // Delete from Retell: First delete agent, then LLM

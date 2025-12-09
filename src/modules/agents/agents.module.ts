@@ -8,6 +8,7 @@ import {
 } from "../../schemas/voice-agent.schema";
 import { Call, CallSchema } from "../../schemas/call.schema";
 import { RetellService } from "../../services/retell.service";
+import { TwilioService } from "../../services/twilio.service";
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { RetellService } from "../../services/retell.service";
     ]),
   ],
   controllers: [AgentsController],
-  providers: [AgentsService, RetellService],
+  providers: [AgentsService, RetellService, TwilioService],
   exports: [AgentsService],
 })
 export class AgentsModule {}

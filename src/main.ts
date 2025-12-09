@@ -106,12 +106,13 @@ async function bootstrap() {
     maxAge: 86400, // 24 hours
   });
 
-  // Global validation pipe
+  // Global validation pipe (skip validation for webhook endpoints)
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      skipMissingProperties: false,
     })
   );
 

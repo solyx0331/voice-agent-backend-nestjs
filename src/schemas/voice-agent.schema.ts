@@ -32,6 +32,15 @@ export class VoiceAgent {
   @Prop()
   retellLlmId?: string;
 
+  @Prop()
+  phoneNumber?: string; // Twilio phone number in E.164 format (e.g., +61412345678)
+
+  @Prop()
+  twilioPhoneNumberSid?: string; // Twilio Phone Number SID
+
+  @Prop()
+  webhookUrl?: string; // Webhook URL configured for the phone number
+
   @Prop({ type: Object })
   voice?: {
     type: "generic" | "custom";

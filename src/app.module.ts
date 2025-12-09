@@ -12,6 +12,7 @@ import { SettingsModule } from "./modules/settings/settings.module";
 import { UploadModule } from "./modules/upload/upload.module";
 import { SearchModule } from "./modules/search/search.module";
 import { VoicesModule } from "./modules/voices/voices.module";
+import { WebhooksModule } from "./modules/webhooks/webhooks.module";
 
 @Module({
   imports: [
@@ -92,6 +93,7 @@ import { VoicesModule } from "./modules/voices/voices.module";
     UploadModule,
     SearchModule,
     VoicesModule,
+    WebhooksModule,
   ],
 })
 export class AppModule {}
