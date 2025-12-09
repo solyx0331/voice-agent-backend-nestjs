@@ -31,6 +31,11 @@ export class CallsService {
       query.agent = filters.agent;
     }
 
+    // Support filtering by agentId if provided
+    if (filters?.agentId) {
+      query.agentId = filters.agentId;
+    }
+
     if (filters?.type) {
       query.type = filters.type;
     }
@@ -50,6 +55,32 @@ export class CallsService {
         id: call._id.toString(),
         date: this.formatDate(call.date),
         agentId: call.agentId?.toString(),
+        // Ensure transcript is in the expected format
+        transcript: call.transcript || [],
+      };
+    });
+  }
+
+  /**
+   * Get calls for a specific agent
+   * @param agentId Agent ID
+   * @param limit Optional limit for number of calls
+   */
+  async getAgentCalls(agentId: string, limit?: number) {
+    const query: any = { agentId: new Types.ObjectId(agentId) };
+    const calls = await this.callModel
+      .find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit || 100);
+
+    return calls.map((call) => {
+      const obj = call.toObject();
+      return {
+        ...obj,
+        id: call._id.toString(),
+        date: this.formatDate(call.date),
+        agentId: call.agentId?.toString(),
+        transcript: call.transcript || [],
       };
     });
   }
@@ -67,6 +98,8 @@ export class CallsService {
       id: call._id.toString(),
       date: this.formatDate(call.date),
       agentId: call.agentId?.toString(),
+      // Ensure transcript is in the expected format
+      transcript: call.transcript || [],
     };
   }
 

@@ -51,5 +51,32 @@ export class WebhooksController {
       return res.status(HttpStatus.OK).send(errorTwiml);
     }
   }
+
+  /**
+   * Handle incoming Retell webhook events
+   * Retell sends webhooks for call events (started, ended, transcript, analyzed)
+   * Configure this URL in Retell dashboard: https://your-backend.com/api/webhooks/retell
+   */
+  @Post("retell")
+  async handleRetellWebhook(@Body() body: any) {
+    try {
+      this.logger.log(`Received Retell webhook`);
+      this.logger.debug(`Retell webhook payload: ${JSON.stringify(body, null, 2)}`);
+
+      // Process the Retell webhook
+      await this.webhooksService.handleRetellWebhook(body);
+
+      // Retell webhooks expect a 200 OK response
+      return { status: "ok" };
+    } catch (error: any) {
+      this.logger.error(
+        `Error handling Retell webhook: ${error.message}`,
+        error.stack
+      );
+      
+      // Still return 200 to Retell to avoid retries for processing errors
+      return { status: "error", message: error.message };
+    }
+  }
 }
 

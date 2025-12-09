@@ -123,6 +123,10 @@ export class CallFiltersDto {
   agent?: string;
 
   @IsOptional()
+  @IsString()
+  agentId?: string;
+
+  @IsOptional()
   @IsEnum(["inbound", "outbound", "missed"])
   type?: "inbound" | "outbound" | "missed";
 

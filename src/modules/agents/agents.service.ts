@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, Logger, HttpException, HttpStatus } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
-import { Model } from "mongoose";
+import { Model, Types } from "mongoose";
 import { VoiceAgent, VoiceAgentDocument } from "../../schemas/voice-agent.schema";
 import { Call, CallDocument } from "../../schemas/call.schema";
 import { CreateAgentDto, UpdateAgentDto } from "../../dto/agent.dto";
@@ -478,23 +478,26 @@ export class AgentsService {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
     }
 
-    let query = this.callModel
+    // Get calls for this agent
+    const calls = await this.callModel
       .find({
-        $or: [{ agentId: agentId }, { agent: agent.name }],
+        $or: [
+          { agentId: new Types.ObjectId(agentId) },
+          { agent: agent.name },
+        ],
       })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(limit || 100)
+      .exec();
 
-    if (limit) {
-      query = query.limit(limit);
-    }
-
-    const calls = await query;
     return calls.map((call) => {
       const obj = call.toObject();
       return {
         ...obj,
         id: call._id.toString(),
         date: this.formatDate(call.date),
+        agentId: call.agentId?.toString(),
+        transcript: call.transcript || [],
       };
     });
   }

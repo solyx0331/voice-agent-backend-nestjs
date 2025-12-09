@@ -67,6 +67,38 @@ export class Call {
   @Prop({ type: Types.ObjectId, ref: "Contact" })
   contactId?: Types.ObjectId;
 
+  // Retell-specific fields
+  @Prop()
+  retellCallId?: string; // Retell call ID for tracking
+
+  @Prop()
+  twilioCallSid?: string; // Twilio Call SID for tracking
+
+  @Prop()
+  recordingUrl?: string; // URL to call recording (if available)
+
+  @Prop({ type: Object })
+  callAnalysis?: {
+    sentiment?: "positive" | "neutral" | "negative" | "unknown";
+    summary?: string;
+    extractedData?: Record<string, any>;
+  };
+
+  @Prop({ type: Object })
+  callCost?: {
+    total?: number;
+    currency?: string;
+  };
+
+  @Prop()
+  disconnectionReason?: string; // Reason for call end
+
+  @Prop({ type: Date })
+  startTime?: Date; // Actual call start time
+
+  @Prop({ type: Date })
+  endTime?: Date; // Actual call end time
+
   createdAt: Date;
   updatedAt: Date;
 }
