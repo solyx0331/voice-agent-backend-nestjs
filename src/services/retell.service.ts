@@ -770,5 +770,76 @@ export class RetellService {
     );
     return "11labs-Adrian";
   }
+
+  /**
+   * Register a phone call with Retell for custom telephony integration (Twilio)
+   * This creates a call session that can be connected via SIP
+   * @param agentId Retell agent ID
+   * @param fromNumber Caller's phone number (optional, for tracking)
+   * @param toNumber Called number (optional, for tracking)
+   * @returns Retell call response with call_id and connection details
+   */
+  async registerPhoneCall(
+    agentId: string,
+    fromNumber?: string,
+    toNumber?: string
+  ): Promise<any> {
+    if (!this.apiKey) {
+      throw new HttpException(
+        "RETELL_API_KEY is not configured.",
+        HttpStatus.UNAUTHORIZED
+      );
+    }
+
+    if (!agentId) {
+      throw new HttpException(
+        "Agent ID is required to register a phone call.",
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    try {
+      this.logger.log(
+        `Registering phone call with Retell for agent ${agentId}`
+      );
+
+      const params: any = {
+        agent_id: agentId,
+        direction: "inbound" as const,
+      };
+
+      if (fromNumber) {
+        params.from_number = fromNumber;
+      }
+
+      if (toNumber) {
+        params.to_number = toNumber;
+      }
+
+      const response = await this.client.call.registerPhoneCall(params);
+
+      this.logger.log(
+        `Successfully registered phone call with Retell. Call ID: ${response.call_id}`
+      );
+
+      return response;
+    } catch (error: any) {
+      this.logger.error(
+        `Error registering phone call with Retell: ${error.message}`,
+        error.stack
+      );
+
+      if (error.response) {
+        this.logger.error(
+          `Retell API error response: ${JSON.stringify(error.response, null, 2)}`
+        );
+      }
+
+      throw new HttpException(
+        `Failed to register phone call with Retell: ${error.message || "Unknown error"}`,
+        error.status || error.statusCode || HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
 }
 

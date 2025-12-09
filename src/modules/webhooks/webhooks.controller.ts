@@ -24,12 +24,15 @@ export class WebhooksController {
       this.logger.log(`Received Twilio webhook for agent ${agentId}`);
       this.logger.debug(`Webhook payload: ${JSON.stringify(body, null, 2)}`);
 
-      // Process the webhook
-      await this.webhooksService.handleTwilioWebhook(agentId, body);
+      // Process the webhook and register call with Retell
+      const retellCall = await this.webhooksService.handleTwilioWebhook(agentId, body);
 
-      // Return TwiML response for Twilio
-      // Twilio expects a TwiML XML response for voice calls
-      const twiml = this.webhooksService.generateTwiMLResponse(agentId);
+      // Generate TwiML response to connect Twilio call to Retell
+      // Only generate connection TwiML if we have a Retell call ID
+      const twiml = retellCall.callId
+        ? this.webhooksService.generateTwiMLResponse(retellCall.callId, agentId)
+        : this.webhooksService.generateTwiMLResponse("", agentId);
+
       res.type("text/xml");
       return res.send(twiml);
     } catch (error: any) {
@@ -41,7 +44,7 @@ export class WebhooksController {
       // Return error TwiML response to Twilio
       const errorTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say>Sorry, there was an error processing your call.</Say>
+  <Say>Sorry, there was an error processing your call. Please try again later.</Say>
   <Hangup/>
 </Response>`;
       res.type("text/xml");
