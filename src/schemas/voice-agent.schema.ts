@@ -106,7 +106,6 @@ export class VoiceAgent {
     primaryIntentPrompts: string[];
     leadCaptureQuestions: Array<{
       question: string;
-      field: string;
     }>;
     responseLogic?: Array<{
       condition: string;
