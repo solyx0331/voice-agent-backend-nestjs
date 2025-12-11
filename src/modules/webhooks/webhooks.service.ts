@@ -1,9 +1,10 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException, Inject, forwardRef } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model, Types } from "mongoose";
 import { VoiceAgent, VoiceAgentDocument } from "../../schemas/voice-agent.schema";
 import { Call, CallDocument } from "../../schemas/call.schema";
 import { RetellService } from "../../services/retell.service";
+import { LiveCallsGateway } from "../websocket/websocket.gateway";
 
 @Injectable()
 export class WebhooksService {
@@ -14,7 +15,9 @@ export class WebhooksService {
     private agentModel: Model<VoiceAgentDocument>,
     @InjectModel(Call.name)
     private callModel: Model<CallDocument>,
-    private retellService: RetellService
+    private retellService: RetellService,
+    @Inject(forwardRef(() => LiveCallsGateway))
+    private liveCallsGateway: LiveCallsGateway
   ) {}
 
   /**
@@ -249,7 +252,20 @@ export class WebhooksService {
       updates.type = callData.direction === "inbound" ? "inbound" : "outbound";
     }
 
-    await this.callModel.findByIdAndUpdate(call._id, { $set: updates });
+    const updatedCall = await this.callModel.findByIdAndUpdate(call._id, { $set: updates }, { new: true });
+
+    // Emit WebSocket event for call started
+    if (updatedCall) {
+      this.liveCallsGateway.emitCallStarted({
+        callId: updatedCall._id.toString(),
+        retellCallId: updatedCall.retellCallId,
+        agentId: updatedCall.agentId?.toString(),
+        phone: updatedCall.phone,
+        contact: updatedCall.contact,
+        startTime: updatedCall.startTime,
+        type: updatedCall.type,
+      });
+    }
   }
 
   /**
@@ -368,7 +384,18 @@ export class WebhooksService {
       };
     }
 
-    await this.callModel.findByIdAndUpdate(call._id, { $set: updates });
+    const updatedCall = await this.callModel.findByIdAndUpdate(call._id, { $set: updates }, { new: true });
+
+    // Emit WebSocket event for call ended
+    if (updatedCall) {
+      this.liveCallsGateway.emitCallEnded({
+        callId: updatedCall._id.toString(),
+        retellCallId: updatedCall.retellCallId,
+        status: updates.status,
+        duration: updates.duration,
+        ...updates,
+      });
+    }
 
     // Update agent call count
     if (call.agentId) {
@@ -441,9 +468,17 @@ export class WebhooksService {
       return timeA - timeB;
     });
 
-    await this.callModel.findByIdAndUpdate(call._id, {
+    const updatedCall = await this.callModel.findByIdAndUpdate(call._id, {
       $set: { transcript: mergedTranscript },
-    });
+    }, { new: true });
+
+    // Emit WebSocket event for transcript update
+    if (updatedCall) {
+      this.liveCallsGateway.emitCallTranscript(
+        updatedCall._id.toString(),
+        mergedTranscript
+      );
+    }
   }
 
   /**

@@ -13,6 +13,7 @@ import { UploadModule } from "./modules/upload/upload.module";
 import { SearchModule } from "./modules/search/search.module";
 import { VoicesModule } from "./modules/voices/voices.module";
 import { WebhooksModule } from "./modules/webhooks/webhooks.module";
+import { WebSocketModule } from "./modules/websocket/websocket.module";
 
 @Module({
   imports: [
@@ -94,6 +95,7 @@ import { WebhooksModule } from "./modules/webhooks/webhooks.module";
     SearchModule,
     VoicesModule,
     WebhooksModule,
+    WebSocketModule,
   ],
 })
 export class AppModule {}
