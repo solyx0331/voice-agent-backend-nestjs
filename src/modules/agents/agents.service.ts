@@ -332,13 +332,22 @@ export class AgentsService {
         this.logger.log(`Updating agent in Retell: ${agent.retellAgentId}`);
         
         // Map voice configuration if updated
+        // Check both updateAgentDto and mergedAgent to catch voice-only updates
         let voiceId: string | undefined;
-        if (mergedAgent.voice) {
-          if (mergedAgent.voice.type === "custom" && mergedAgent.voice.customVoiceId) {
-            voiceId = mergedAgent.voice.customVoiceId;
-          } else if (mergedAgent.voice.type === "generic" && mergedAgent.voice.genericVoice) {
-            voiceId = this.retellService.mapGenericVoiceToRetellId(mergedAgent.voice.genericVoice);
+        const voiceConfig = updateAgentDto.voice || mergedAgent.voice;
+        if (voiceConfig) {
+          if (voiceConfig.type === "custom" && voiceConfig.customVoiceId) {
+            voiceId = voiceConfig.customVoiceId;
+            this.logger.log(`Using custom voice ID: ${voiceId}`);
+          } else if (voiceConfig.type === "generic" && voiceConfig.genericVoice) {
+            // The genericVoice contains the display_name (e.g., "ElevenLabs - Aria")
+            // We need to look up the actual voice_id from Retell
+            this.logger.log(`Mapping display name to voice_id: ${voiceConfig.genericVoice}`);
+            voiceId = await this.retellService.mapDisplayNameToVoiceId(voiceConfig.genericVoice);
+            this.logger.log(`Mapped to voice_id: ${voiceId}`);
           }
+        } else {
+          this.logger.log(`No voice configuration in update - keeping existing voice`);
         }
         
         // Only update agent-specific fields (not LLM-related)
@@ -350,21 +359,38 @@ export class AgentsService {
           agentUpdateParams.webhook_url = mergedAgent.notifications.crm.endpoint;
         }
         
+        // Always include voice_id if we have it (even if unchanged, to ensure it's set)
+        // If voice was updated, use the new voiceId; otherwise keep existing voice
         if (voiceId) {
           agentUpdateParams.voice_id = voiceId;
+          this.logger.log(`Setting voice_id in Retell update: ${voiceId}`);
+        } else if (agent.voice) {
+          // If no new voice specified but agent has existing voice, preserve it
+          if (agent.voice.type === "custom" && agent.voice.customVoiceId) {
+            agentUpdateParams.voice_id = agent.voice.customVoiceId;
+            this.logger.log(`Preserving existing custom voice_id: ${agent.voice.customVoiceId}`);
+          } else if (agent.voice.type === "generic" && agent.voice.genericVoice) {
+            // Map existing generic voice to voice_id
+            agentUpdateParams.voice_id = await this.retellService.mapDisplayNameToVoiceId(agent.voice.genericVoice);
+            this.logger.log(`Preserving existing generic voice_id: ${agentUpdateParams.voice_id}`);
+          }
         }
 
-        // Voice settings (if provided)
-        if (mergedAgent.voice) {
-          const voice = mergedAgent.voice as any; // Type assertion for voice settings
+        // Voice settings (if provided) - check both update DTO and merged agent
+        const voiceSettings = updateAgentDto.voice || mergedAgent.voice;
+        if (voiceSettings) {
+          const voice = voiceSettings as any; // Type assertion for voice settings
           if (voice.temperature !== undefined) {
             agentUpdateParams.voice_temperature = Math.max(0, Math.min(2, voice.temperature));
+            this.logger.log(`Updating voice_temperature: ${agentUpdateParams.voice_temperature}`);
           }
           if (voice.speed !== undefined) {
             agentUpdateParams.voice_speed = Math.max(0.5, Math.min(2, voice.speed));
+            this.logger.log(`Updating voice_speed: ${agentUpdateParams.voice_speed}`);
           }
           if (voice.volume !== undefined) {
             agentUpdateParams.volume = Math.max(0, Math.min(2, voice.volume));
+            this.logger.log(`Updating volume: ${agentUpdateParams.volume}`);
           }
         }
         

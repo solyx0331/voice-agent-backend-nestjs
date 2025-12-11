@@ -332,13 +332,32 @@ export class RetellService {
       };
       
       // Helper function to check if a voice is Australian
-      const isAustralianVoice = (voiceName: string, voiceId: string): boolean => {
+      // Checks for various patterns: "australian", "australia", "au", "en-au", "english (australia)", etc.
+      const isAustralianVoice = (voiceName: string, voiceId: string, voice?: any): boolean => {
         const searchText = `${voiceName} ${voiceId}`.toLowerCase();
-        return searchText.includes('australian') || 
-               searchText.includes('australia') || 
-               searchText.includes('au-') ||
-               searchText.includes('_au') ||
-               searchText.includes('au_');
+        
+        // Check voice name and ID for Australian indicators
+        const hasAustralianIndicator = 
+          searchText.includes('australian') || 
+          searchText.includes('australia') || 
+          searchText.includes('au-') ||
+          searchText.includes('_au') ||
+          searchText.includes('au_') ||
+          searchText.includes('en-au') ||
+          searchText.includes('en_au') ||
+          searchText.includes('en-australia') ||
+          searchText.includes('en_australia') ||
+          (searchText.includes('english') && (searchText.includes('australia') || searchText.includes('au')));
+        
+        // Also check if voice object has language/locale properties
+        if (voice) {
+          const language = ((voice as any).language || (voice as any).locale || '').toLowerCase();
+          if (language.includes('en-au') || language.includes('en_australia') || language === 'en-au') {
+            return true;
+          }
+        }
+        
+        return hasAustralianIndicator;
       };
       
       const mappedVoices = voices.map(v => {
@@ -346,7 +365,7 @@ export class RetellService {
         const providerDisplay = providerDisplayMap[v.provider] || 
           v.provider.charAt(0).toUpperCase() + v.provider.slice(1);
         
-        const isAU = isAustralianVoice(v.voice_name, v.voice_id);
+        const isAU = isAustralianVoice(v.voice_name, v.voice_id, v);
         
         return {
           voice_id: v.voice_id,
@@ -364,7 +383,25 @@ export class RetellService {
         return 0;
       });
       
-      this.logger.log(`Found ${sortedVoices.filter(v => v.isAustralian).length} Australian voices`);
+      const australianVoices = sortedVoices.filter(v => v.isAustralian);
+      this.logger.log(`Found ${australianVoices.length} Australian voices out of ${sortedVoices.length} total`);
+      
+      // Log sample voices for debugging
+      if (voices.length > 0) {
+        this.logger.log(`Sample voice data (first 3): ${JSON.stringify(voices.slice(0, 3).map(v => ({ 
+          name: v.voice_name, 
+          id: v.voice_id, 
+          provider: v.provider,
+          language: (v as any).language,
+          locale: (v as any).locale 
+        })))}`);
+        
+        if (australianVoices.length > 0) {
+          this.logger.log(`Australian voices found: ${australianVoices.map(v => v.display_name).join(', ')}`);
+        } else {
+          this.logger.warn(`No Australian voices detected. Sample voice names: ${voices.slice(0, 5).map(v => v.voice_name).join(', ')}`);
+        }
+      }
       
       return sortedVoices;
     } catch (error: any) {
