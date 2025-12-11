@@ -47,6 +47,9 @@ export class VoiceAgent {
     genericVoice?: string;
     customVoiceId?: string;
     customVoiceUrl?: string;
+    temperature?: number; // Voice stability (0-2)
+    speed?: number; // Speech speed (0.5-2)
+    volume?: number; // Volume level (0-2)
   };
 
   @Prop()
@@ -113,6 +116,23 @@ export class VoiceAgent {
       response: string;
     }>;
   };
+
+  // Retell API fields for agent behavior
+  @Prop()
+  responsiveness?: number; // How responsive the agent is (0-1)
+
+  @Prop()
+  interruptionSensitivity?: number; // How easily user can interrupt (0-1)
+
+  // Retell API fields for call management
+  @Prop()
+  endCallAfterSilenceMs?: number; // End call after silence (min 10000ms)
+
+  @Prop()
+  maxCallDurationMs?: number; // Max call duration (60000-7200000ms)
+
+  @Prop()
+  beginMessageDelayMs?: number; // Delay before first message (0-5000ms)
 
   createdAt: Date;
   updatedAt: Date;

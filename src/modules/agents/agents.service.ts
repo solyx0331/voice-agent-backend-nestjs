@@ -353,6 +353,39 @@ export class AgentsService {
         if (voiceId) {
           agentUpdateParams.voice_id = voiceId;
         }
+
+        // Voice settings (if provided)
+        if (mergedAgent.voice) {
+          const voice = mergedAgent.voice as any; // Type assertion for voice settings
+          if (voice.temperature !== undefined) {
+            agentUpdateParams.voice_temperature = Math.max(0, Math.min(2, voice.temperature));
+          }
+          if (voice.speed !== undefined) {
+            agentUpdateParams.voice_speed = Math.max(0.5, Math.min(2, voice.speed));
+          }
+          if (voice.volume !== undefined) {
+            agentUpdateParams.volume = Math.max(0, Math.min(2, voice.volume));
+          }
+        }
+        
+        // Agent behavior settings (if provided)
+        if (mergedAgent.responsiveness !== undefined) {
+          agentUpdateParams.responsiveness = Math.max(0, Math.min(1, mergedAgent.responsiveness));
+        }
+        if (mergedAgent.interruptionSensitivity !== undefined) {
+          agentUpdateParams.interruption_sensitivity = Math.max(0, Math.min(1, mergedAgent.interruptionSensitivity));
+        }
+
+        // Call management settings (if provided)
+        if (mergedAgent.endCallAfterSilenceMs !== undefined) {
+          agentUpdateParams.end_call_after_silence_ms = Math.max(10000, mergedAgent.endCallAfterSilenceMs);
+        }
+        if (mergedAgent.maxCallDurationMs !== undefined) {
+          agentUpdateParams.max_call_duration_ms = Math.max(60000, Math.min(7200000, mergedAgent.maxCallDurationMs));
+        }
+        if (mergedAgent.beginMessageDelayMs !== undefined) {
+          agentUpdateParams.begin_message_delay_ms = Math.max(0, Math.min(5000, mergedAgent.beginMessageDelayMs));
+        }
         
         // Configure voicemail option if updated
         if (mergedAgent.callRules?.fallbackToVoicemail) {

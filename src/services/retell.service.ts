@@ -677,6 +677,17 @@ export class RetellService {
         // We need to look up the actual voice_id from Retell
         config.voice_id = await this.mapDisplayNameToVoiceId(createAgentDto.voice.genericVoice);
       }
+
+      // Voice settings (if provided)
+      if (createAgentDto.voice.temperature !== undefined) {
+        config.voice_temperature = Math.max(0, Math.min(2, createAgentDto.voice.temperature));
+      }
+      if (createAgentDto.voice.speed !== undefined) {
+        config.voice_speed = Math.max(0.5, Math.min(2, createAgentDto.voice.speed));
+      }
+      if (createAgentDto.voice.volume !== undefined) {
+        config.volume = Math.max(0, Math.min(2, createAgentDto.voice.volume));
+      }
     }
 
     // If no voice_id is set, use a default
@@ -702,6 +713,25 @@ export class RetellService {
           text: voicemailMessage,
         },
       };
+    }
+
+    // Agent behavior settings
+    if (createAgentDto.responsiveness !== undefined) {
+      config.responsiveness = Math.max(0, Math.min(1, createAgentDto.responsiveness));
+    }
+    if (createAgentDto.interruptionSensitivity !== undefined) {
+      config.interruption_sensitivity = Math.max(0, Math.min(1, createAgentDto.interruptionSensitivity));
+    }
+
+    // Call management settings
+    if (createAgentDto.endCallAfterSilenceMs !== undefined) {
+      config.end_call_after_silence_ms = Math.max(10000, createAgentDto.endCallAfterSilenceMs);
+    }
+    if (createAgentDto.maxCallDurationMs !== undefined) {
+      config.max_call_duration_ms = Math.max(60000, Math.min(7200000, createAgentDto.maxCallDurationMs));
+    }
+    if (createAgentDto.beginMessageDelayMs !== undefined) {
+      config.begin_message_delay_ms = Math.max(0, Math.min(5000, createAgentDto.beginMessageDelayMs));
     }
 
     return config;

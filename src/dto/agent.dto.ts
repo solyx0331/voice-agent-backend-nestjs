@@ -25,6 +25,18 @@ export class VoiceConfigDto {
   @IsOptional()
   @IsString()
   customVoiceUrl?: string;
+
+  @IsOptional()
+  @IsNumber()
+  temperature?: number; // Voice stability (0-2)
+
+  @IsOptional()
+  @IsNumber()
+  speed?: number; // Speech speed (0.5-2)
+
+  @IsOptional()
+  @IsNumber()
+  volume?: number; // Volume level (0-2)
 }
 
 export class FAQDto {
@@ -224,6 +236,28 @@ export class CreateAgentDto {
   @ValidateNested()
   @Type(() => BaseLogicDto)
   baseLogic?: BaseLogicDto;
+
+  // Retell API fields for agent behavior
+  @IsOptional()
+  @IsNumber()
+  responsiveness?: number; // How responsive the agent is (0-1)
+
+  @IsOptional()
+  @IsNumber()
+  interruptionSensitivity?: number; // How easily user can interrupt (0-1)
+
+  // Retell API fields for call management
+  @IsOptional()
+  @IsNumber()
+  endCallAfterSilenceMs?: number; // End call after silence (min 10000ms)
+
+  @IsOptional()
+  @IsNumber()
+  maxCallDurationMs?: number; // Max call duration (60000-7200000ms)
+
+  @IsOptional()
+  @IsNumber()
+  beginMessageDelayMs?: number; // Delay before first message (0-5000ms)
 }
 
 export class UpdateAgentDto {
@@ -284,5 +318,27 @@ export class UpdateAgentDto {
   @ValidateNested()
   @Type(() => BaseLogicDto)
   baseLogic?: BaseLogicDto;
+
+  // Retell API fields for agent behavior
+  @IsOptional()
+  @IsNumber()
+  responsiveness?: number; // How responsive the agent is (0-1)
+
+  @IsOptional()
+  @IsNumber()
+  interruptionSensitivity?: number; // How easily user can interrupt (0-1)
+
+  // Retell API fields for call management
+  @IsOptional()
+  @IsNumber()
+  endCallAfterSilenceMs?: number; // End call after silence (min 10000ms)
+
+  @IsOptional()
+  @IsNumber()
+  maxCallDurationMs?: number; // Max call duration (60000-7200000ms)
+
+  @IsOptional()
+  @IsNumber()
+  beginMessageDelayMs?: number; // Delay before first message (0-5000ms)
 }
 
