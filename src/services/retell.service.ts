@@ -458,73 +458,91 @@ export class RetellService {
         this.logger.error(`Request details: ${JSON.stringify(error.request, null, 2)}`);
       }
       
-      // If 404, provide more specific guidance
+      // If 404, provide more specific guidance with missing fields
       if (error.status === 404 || error.statusCode === 404) {
         const llmId = (config.response_engine as any)?.llm_id;
+        const missingFields: string[] = [];
         
-        // Try to extract the URL from the error if available
-        let errorUrl = 'unknown';
-        if (error.url) errorUrl = error.url;
-        else if (error.request?.url) errorUrl = error.request.url;
-        else if (error.config?.url) errorUrl = error.config.url;
+        // Check for missing required fields
+        if (!llmId) {
+          missingFields.push("LLM ID (response_engine.llm_id)");
+        }
+        if (!config.voice_id) {
+          missingFields.push("Voice ID (voice_id)");
+        }
+        if (!config.agent_name) {
+          missingFields.push("Agent Name (agent_name)");
+        }
+        if (!config.language) {
+          missingFields.push("Language (language)");
+        }
+        if (!config.response_engine || !(config.response_engine as any)?.type) {
+          missingFields.push("Response Engine Type (response_engine.type)");
+        }
         
         // Verify LLM exists
         let llmVerified = false;
-        try {
-          llmVerified = await this.verifyLlmExists(llmId);
-        } catch (verifyError) {
-          this.logger.error(`Could not verify LLM: ${verifyError}`);
+        if (llmId) {
+          try {
+            llmVerified = await this.verifyLlmExists(llmId);
+            if (!llmVerified) {
+              missingFields.push(`LLM ID "${llmId}" does not exist in your Retell account`);
+            }
+          } catch (verifyError) {
+            this.logger.error(`Could not verify LLM: ${verifyError}`);
+            missingFields.push(`LLM ID "${llmId}" verification failed`);
+          }
         }
         
         // Verify voice exists
         let voiceVerified = false;
         let availableVoices: Array<{ voice_id: string; voice_name: string; provider: string }> = [];
-        try {
-          voiceVerified = await this.verifyVoiceExists(config.voice_id);
-          if (!voiceVerified) {
-            // If voice doesn't exist, list available voices
-            availableVoices = await this.listAvailableVoices();
+        if (config.voice_id) {
+          try {
+            voiceVerified = await this.verifyVoiceExists(config.voice_id);
+            if (!voiceVerified) {
+              missingFields.push(`Voice ID "${config.voice_id}" does not exist in your Retell account`);
+              // If voice doesn't exist, list available voices
+              availableVoices = await this.listAvailableVoices();
+            }
+          } catch (verifyError) {
+            this.logger.error(`Could not verify voice: ${verifyError}`);
+            missingFields.push(`Voice ID "${config.voice_id}" verification failed`);
           }
-        } catch (verifyError) {
-          this.logger.error(`Could not verify voice: ${verifyError}`);
         }
         
-        this.logger.error(
-          `404 Not Found - Detailed Analysis:\n` +
-          `  Request URL: ${errorUrl}\n` +
-          `  LLM ID: "${llmId}" (verified: ${llmVerified})\n` +
-          `  Voice ID: "${config.voice_id}" (verified: ${voiceVerified})\n` +
-          `  Agent Name: "${config.agent_name}"\n` +
-          `  Language: "${config.language}"\n` +
-          `  Response Engine Type: "${(config.response_engine as any)?.type}"\n` +
-          `\nPossible causes:\n` +
-          `  1. ${!voiceVerified ? `❌ Voice ID "${config.voice_id}" does NOT exist in your account` : 'Voice ID is valid'}\n` +
-          `  2. ${!llmVerified ? `❌ LLM ID "${llmId}" does NOT exist or is not accessible` : 'LLM ID is valid'}\n` +
-          `  3. API endpoint path might be incorrect (expected: /create-agent)\n` +
-          `  4. SDK version might be outdated (current: retell-sdk@4.66.0)\n` +
-          `  5. API might require different endpoint structure\n` +
-          `  6. Check Retell API documentation: https://docs.retellai.com/api-references/create-agent`
-        );
+        // Build detailed error message
+        let errorMessage = "Failed to create agent in Retell (404 Not Found).\n\n";
         
-        // If voice doesn't exist, show available voices
-        if (!voiceVerified && availableVoices.length > 0) {
-          this.logger.error(`\nAvailable voices in your Retell account:`);
-          availableVoices.forEach(v => {
-            this.logger.error(`  - ${v.voice_id} (${v.voice_name} from ${v.provider})`);
+        if (missingFields.length > 0) {
+          errorMessage += "Missing or Invalid Fields:\n";
+          missingFields.forEach((field, index) => {
+            errorMessage += `${index + 1}. ${field}\n`;
           });
+          errorMessage += "\n";
         }
         
-        // Log the exact request payload structure
-        this.logger.error(`\nExact request payload structure:`);
-        this.logger.error(JSON.stringify({
-          response_engine: {
-            type: (config.response_engine as any)?.type,
-            llm_id: (config.response_engine as any)?.llm_id,
-          },
-          voice_id: config.voice_id,
-          agent_name: config.agent_name,
-          language: config.language,
-        }, null, 2));
+        // Add available voices if voice doesn't exist
+        if (!voiceVerified && availableVoices.length > 0) {
+          errorMessage += "Available voices in your Retell account:\n";
+          availableVoices.slice(0, 10).forEach(v => {
+            errorMessage += `  - ${v.voice_id} (${v.voice_name} from ${v.provider})\n`;
+          });
+          if (availableVoices.length > 10) {
+            errorMessage += `  ... and ${availableVoices.length - 10} more\n`;
+          }
+          errorMessage += "\n";
+        }
+        
+        errorMessage += "Please check the Retell API documentation: https://docs.retellai.com/api-references/create-agent";
+        
+        this.logger.error(errorMessage);
+        
+        // Throw with detailed error message
+        throw new HttpException(
+          errorMessage,
+          HttpStatus.BAD_REQUEST
+        );
       }
 
       // Handle SDK errors
