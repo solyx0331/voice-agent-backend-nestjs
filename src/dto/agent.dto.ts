@@ -134,9 +134,6 @@ export class NotificationsDto {
 export class LeadCaptureQuestionDto {
   @IsString()
   question: string;
-
-  @IsString()
-  field: string;
 }
 
 export class ResponseLogicDto {
