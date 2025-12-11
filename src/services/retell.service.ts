@@ -310,6 +310,7 @@ export class RetellService {
     voice_name: string; 
     provider: string;
     display_name: string; // Format: "Provider - VoiceName" for frontend display
+    isAustralian?: boolean; // Flag to indicate Australian voice
   }>> {
     if (!this.apiKey) {
       this.logger.warn("Cannot list voices: RETELL_API_KEY not configured");
@@ -330,18 +331,42 @@ export class RetellService {
         'minimax': 'Minimax',
       };
       
-      return voices.map(v => {
+      // Helper function to check if a voice is Australian
+      const isAustralianVoice = (voiceName: string, voiceId: string): boolean => {
+        const searchText = `${voiceName} ${voiceId}`.toLowerCase();
+        return searchText.includes('australian') || 
+               searchText.includes('australia') || 
+               searchText.includes('au-') ||
+               searchText.includes('_au') ||
+               searchText.includes('au_');
+      };
+      
+      const mappedVoices = voices.map(v => {
         // Get display name from map, or capitalize provider name
         const providerDisplay = providerDisplayMap[v.provider] || 
           v.provider.charAt(0).toUpperCase() + v.provider.slice(1);
+        
+        const isAU = isAustralianVoice(v.voice_name, v.voice_id);
         
         return {
           voice_id: v.voice_id,
           voice_name: v.voice_name,
           provider: v.provider,
           display_name: `${providerDisplay} - ${v.voice_name}`,
+          isAustralian: isAU,
         };
       });
+      
+      // Sort: Australian voices first, then others
+      const sortedVoices = mappedVoices.sort((a, b) => {
+        if (a.isAustralian && !b.isAustralian) return -1;
+        if (!a.isAustralian && b.isAustralian) return 1;
+        return 0;
+      });
+      
+      this.logger.log(`Found ${sortedVoices.filter(v => v.isAustralian).length} Australian voices`);
+      
+      return sortedVoices;
     } catch (error: any) {
       this.logger.error(`Failed to list voices: ${error.message}`);
       return [];
@@ -708,10 +733,25 @@ export class RetellService {
       }
     }
 
-    // If no voice_id is set, use a default
+    // If no voice_id is set, try to find an Australian voice as default
     if (!config.voice_id) {
-      config.voice_id = "11labs-Adrian";
-      this.logger.warn("No voice_id specified, using default: 11labs-Adrian");
+      try {
+        const voices = await this.listAvailableVoices();
+        const australianVoice = voices.find(v => v.isAustralian);
+        if (australianVoice) {
+          config.voice_id = australianVoice.voice_id;
+          this.logger.log(`No voice_id specified, using Australian voice: ${australianVoice.display_name} (${australianVoice.voice_id})`);
+        } else if (voices.length > 0) {
+          config.voice_id = voices[0].voice_id;
+          this.logger.warn(`No voice_id specified and no Australian voice found, using first available: ${voices[0].display_name} (${voices[0].voice_id})`);
+        } else {
+          config.voice_id = "11labs-Adrian";
+          this.logger.warn("No voice_id specified and no voices available, using fallback: 11labs-Adrian");
+        }
+      } catch (error) {
+        config.voice_id = "11labs-Adrian";
+        this.logger.warn("No voice_id specified and failed to fetch voices, using fallback: 11labs-Adrian");
+      }
     }
 
     // Only include webhook if explicitly provided
