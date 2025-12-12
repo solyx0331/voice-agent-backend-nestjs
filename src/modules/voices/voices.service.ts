@@ -2,9 +2,10 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from "@nes
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { CustomVoice, CustomVoiceDocument } from "../../schemas/custom-voice.schema";
-import { writeFile, unlink } from "fs/promises";
+import { writeFile, unlink, readFile } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
+import { RetellService } from "../../services/retell.service";
 
 @Injectable()
 export class VoicesService {
@@ -13,7 +14,8 @@ export class VoicesService {
 
   constructor(
     @InjectModel(CustomVoice.name)
-    private customVoiceModel: Model<CustomVoiceDocument>
+    private customVoiceModel: Model<CustomVoiceDocument>,
+    private retellService: RetellService
   ) {}
 
   async findAll(): Promise<CustomVoiceDocument[]> {
@@ -86,14 +88,32 @@ export class VoicesService {
     // Generate voice name
     const voiceName = name || file.originalname.replace(/\.[^/.]+$/, "") || `Custom Voice ${timestamp}`;
 
-    // Generate voice ID (this will be used as the Retell voice_id)
-    // For now, we'll use a local ID. In production, you'd upload to Retell and get their voice_id
-    const voiceId = `custom_voice_${timestamp}`;
+    // Upload to Retell to get a real voice_id
+    let retellVoiceId: string | null = null;
+    try {
+      this.logger.log(`Uploading voice to Retell: ${voiceName}`);
+      
+      // Read the file as a buffer for Retell upload
+      const fileBuffer = file.buffer || await readFile(filepath);
+      
+      // Upload to Retell using their API
+      // Retell API endpoint: POST https://api.retellai.com/create-voice
+      // We'll use the RetellService to handle this
+      retellVoiceId = await this.retellService.uploadCustomVoice(filepath, voiceName, fileBuffer);
+      
+      this.logger.log(`Voice uploaded to Retell successfully. Voice ID: ${retellVoiceId}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to upload voice to Retell: ${error.message}`, error.stack);
+      // Continue with local voice ID if Retell upload fails
+      // This allows the system to work even if Retell upload fails
+      retellVoiceId = `custom_voice_${timestamp}`;
+      this.logger.warn(`Using local voice ID: ${retellVoiceId}. Voice will not work with Retell agents until uploaded.`);
+    }
 
     // Create custom voice record
     const customVoice = new this.customVoiceModel({
       name: voiceName,
-      voiceId: voiceId,
+      voiceId: retellVoiceId, // This should be the Retell voice_id after upload
       url: `/uploads/voices/${urlFilename}`,
       type: type,
       fileName: file.originalname,
@@ -103,7 +123,7 @@ export class VoicesService {
 
     const saved = await customVoice.save();
 
-    this.logger.log(`Custom voice created: ${saved._id} (${voiceName})`);
+    this.logger.log(`Custom voice created: ${saved._id} (${voiceName}) with voiceId: ${retellVoiceId}`);
 
     return saved;
   }

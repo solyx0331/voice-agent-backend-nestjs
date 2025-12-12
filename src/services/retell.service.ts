@@ -966,5 +966,101 @@ export class RetellService {
       );
     }
   }
+
+  /**
+   * Upload a custom voice to Retell
+   * @param filePath Path to the voice file
+   * @param voiceName Name for the voice
+   * @param fileBuffer Optional file buffer (if file is already in memory)
+   * @returns Retell voice ID
+   */
+  async uploadCustomVoice(
+    filePath: string,
+    voiceName: string,
+    fileBuffer?: Buffer
+  ): Promise<string> {
+    if (!this.apiKey) {
+      throw new HttpException(
+        "RETELL_API_KEY is not configured. Please set RETELL_API_KEY environment variable.",
+        HttpStatus.UNAUTHORIZED
+      );
+    }
+
+    try {
+      this.logger.log(`Uploading custom voice to Retell: ${voiceName}`);
+
+      // Read file if buffer not provided
+      let buffer = fileBuffer;
+      if (!buffer) {
+        const { readFile } = await import("fs/promises");
+        buffer = await readFile(filePath);
+      }
+
+      // Retell API endpoint for voice upload
+      // According to Retell docs, we need to use their REST API directly
+      // POST https://api.retellai.com/create-voice
+      const FormData = require("form-data");
+      const formData = new FormData();
+      // Determine content type from file extension
+      const fileName = filePath.split(/[/\\]/).pop() || "voice.mp3";
+      const fileExt = fileName.split('.').pop()?.toLowerCase() || 'mp3';
+      const contentType = fileExt === 'webm' ? 'audio/webm' : 
+                         fileExt === 'wav' ? 'audio/wav' : 
+                         fileExt === 'm4a' ? 'audio/m4a' : 
+                         'audio/mpeg';
+      
+      formData.append("file", buffer, {
+        filename: fileName,
+        contentType: contentType,
+      });
+      formData.append("name", voiceName);
+
+      const response = await fetch("https://api.retellai.com/create-voice", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          ...formData.getHeaders(),
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        this.logger.error(`Retell voice upload failed: ${response.status} ${errorText}`);
+        throw new HttpException(
+          `Failed to upload voice to Retell: ${response.statusText}`,
+          response.status
+        );
+      }
+
+      const result = await response.json();
+      const voiceId = result.voice_id || result.id;
+
+      if (!voiceId) {
+        this.logger.error(`Retell voice upload response missing voice_id:`, result);
+        throw new HttpException(
+          "Retell voice upload succeeded but no voice_id returned",
+          HttpStatus.INTERNAL_SERVER_ERROR
+        );
+      }
+
+      this.logger.log(`Custom voice uploaded to Retell. Voice ID: ${voiceId}`);
+      return voiceId;
+    } catch (error: any) {
+      this.logger.error(
+        `Error uploading voice to Retell: ${error.message}`,
+        error.stack
+      );
+
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        `Failed to upload voice to Retell: ${error.message || "Unknown error"}`,
+        error.status || error.statusCode || HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
 }
 
