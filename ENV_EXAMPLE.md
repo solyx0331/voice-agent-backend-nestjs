@@ -11,6 +11,13 @@ DB_NAME=voice_ai_agent
 RETELL_API_KEY=your_retell_api_key_here
 
 # ElevenLabs Configuration
+# IMPORTANT: Your API key must have "voices_write" permission enabled
+# Voice cloning requires a subscription plan that supports custom voices
+# To enable permissions:
+# 1. Go to https://elevenlabs.io/ and log in
+# 2. Navigate to Settings > API Keys
+# 3. Ensure your API key has "voices_write" permission enabled
+# 4. For more info: https://elevenlabs.io/docs/api-reference/add-voice
 ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
 
 # Twilio Configuration

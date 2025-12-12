@@ -90,12 +90,39 @@ export class ElevenLabsService {
 
       if (!response.ok) {
         const errorText = await response.text();
+        let errorMessage = `Failed to create voice in ElevenLabs: ${response.statusText}`;
+        
+        try {
+          const errorJson = JSON.parse(errorText);
+          if (errorJson.detail) {
+            if (typeof errorJson.detail === 'object' && errorJson.detail.status === 'missing_permissions') {
+              errorMessage = `ElevenLabs API key is missing required permissions.\n\n` +
+                `Error: ${errorJson.detail.message || 'Missing voices_write permission'}\n\n` +
+                `To fix this:\n` +
+                `1. Go to your ElevenLabs dashboard: https://elevenlabs.io/\n` +
+                `2. Navigate to your API keys settings\n` +
+                `3. Ensure your API key has the "voices_write" permission enabled\n` +
+                `4. Voice cloning requires a subscription plan that supports custom voices\n\n` +
+                `For more information, visit: https://elevenlabs.io/docs/api-reference/add-voice`;
+            } else if (typeof errorJson.detail === 'string') {
+              errorMessage = `ElevenLabs API error: ${errorJson.detail}`;
+            } else {
+              errorMessage = `ElevenLabs API error: ${JSON.stringify(errorJson.detail)}`;
+            }
+          } else {
+            errorMessage = `ElevenLabs API error: ${errorText}`;
+          }
+        } catch (e) {
+          // If errorText is not JSON, use it as-is
+          errorMessage = `ElevenLabs API error: ${errorText}`;
+        }
+        
         this.logger.error(
           `❌ ElevenLabs voice creation failed: ${response.status} ${response.statusText}`
         );
         this.logger.error(`   Error details: ${errorText}`);
         throw new HttpException(
-          `Failed to create voice in ElevenLabs: ${response.statusText} - ${errorText}`,
+          errorMessage,
           response.status
         );
       }
