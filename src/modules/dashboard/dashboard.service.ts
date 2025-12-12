@@ -26,7 +26,7 @@ export class DashboardService {
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
 
-    const [totalCallsToday, activeAgents, allCallsToday, allCallsYesterday] = await Promise.all([
+    const [totalCallsToday, activeAgents, allCallsToday, allCallsYesterday, activeCalls] = await Promise.all([
       this.callModel.countDocuments({
         createdAt: { $gte: today, $lt: tomorrow },
       }),
@@ -36,6 +36,10 @@ export class DashboardService {
       }),
       this.callModel.find({
         createdAt: { $gte: yesterday, $lt: today },
+      }),
+      // Get currently active calls (status: "ongoing" or calls that started but haven't ended)
+      this.callModel.find({
+        status: "ongoing",
       }),
     ]);
 
@@ -100,6 +104,7 @@ export class DashboardService {
     return {
       totalCallsToday,
       activeAgents,
+      activeCallsCount: activeCalls.length,
       avgCallDuration: avgDuration,
       successRate: Math.round(successRateToday * 10) / 10,
       callsChange: Math.round(callsChange * 10) / 10,
@@ -132,6 +137,32 @@ export class DashboardService {
   async getAnalyticsData() {
     const calls = await this.callModel.find();
     const agents = await this.agentModel.find();
+    const contacts = await this.contactModel.find();
+
+    // Calculate date ranges for comparisons
+    const now = new Date();
+    const lastMonth = new Date(now);
+    lastMonth.setMonth(lastMonth.getMonth() - 1);
+    const lastWeek = new Date(now);
+    lastWeek.setDate(lastWeek.getDate() - 7);
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+
+    // Filter calls for different periods
+    const callsThisMonth = calls.filter(
+      (call) => call.createdAt >= thisMonthStart
+    );
+    const callsLastMonth = calls.filter(
+      (call) =>
+        call.createdAt >= lastMonthStart && call.createdAt < thisMonthStart
+    );
+    const callsThisWeek = calls.filter((call) => call.createdAt >= lastWeek);
+    const callsLastWeek = calls.filter(
+      (call) =>
+        call.createdAt >= new Date(lastWeek.getTime() - 7 * 24 * 60 * 60 * 1000) &&
+        call.createdAt < lastWeek
+    );
 
     // Call volume by day (last 7 days)
     const callVolume = [];
@@ -153,15 +184,23 @@ export class DashboardService {
       });
     }
 
-    // Hourly data (last 24 hours)
+    // Hourly data (last 24 hours - today only)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const callsToday = calls.filter(
+      (call) => call.createdAt >= today && call.createdAt < tomorrow
+    );
+
     const hourlyData = [];
-    for (let i = 23; i >= 0; i--) {
-      const hour = new Date();
-      hour.setHours(hour.getHours() - i, 0, 0, 0);
+    for (let i = 0; i < 24; i++) {
+      const hour = new Date(today);
+      hour.setHours(i, 0, 0, 0);
       const nextHour = new Date(hour);
       nextHour.setHours(nextHour.getHours() + 1);
 
-      const count = calls.filter(
+      const count = callsToday.filter(
         (call) => call.createdAt >= hour && call.createdAt < nextHour
       ).length;
 
@@ -174,6 +213,77 @@ export class DashboardService {
       });
     }
 
+    // Calculate Average Handle Time (AHT)
+    const calculateAHT = (callList: CallDocument[]): string => {
+      if (callList.length === 0) return "0:00";
+      const totalSeconds = callList.reduce((sum, call) => {
+        const [minutes, seconds] = call.duration.split(":").map(Number);
+        return sum + (minutes * 60 + seconds);
+      }, 0);
+      const avgSeconds = totalSeconds / callList.length;
+      const mins = Math.floor(avgSeconds / 60);
+      const secs = Math.floor(avgSeconds % 60);
+      return `${mins}:${secs.toString().padStart(2, "0")}`;
+    };
+
+    const ahtThisMonth = calculateAHT(callsThisMonth);
+    const ahtLastMonth = calculateAHT(callsLastMonth);
+    const ahtThisMonthSeconds = callsThisMonth.reduce((sum, call) => {
+      const [minutes, seconds] = call.duration.split(":").map(Number);
+      return sum + (minutes * 60 + seconds);
+    }, 0) / (callsThisMonth.length || 1);
+    const ahtLastMonthSeconds = callsLastMonth.reduce((sum, call) => {
+      const [minutes, seconds] = call.duration.split(":").map(Number);
+      return sum + (minutes * 60 + seconds);
+    }, 0) / (callsLastMonth.length || 1);
+    const ahtChange =
+      ahtLastMonthSeconds > 0
+        ? ((ahtThisMonthSeconds - ahtLastMonthSeconds) / ahtLastMonthSeconds) * 100
+        : ahtThisMonthSeconds > 0
+        ? -100
+        : 0;
+
+    // Calculate Resolution Rate (successful calls / total calls)
+    const calculateResolutionRate = (callList: CallDocument[]): number => {
+      if (callList.length === 0) return 0;
+      const resolved = callList.filter(
+        (call) => call.outcome === "success" || call.status === "completed"
+      ).length;
+      return (resolved / callList.length) * 100;
+    };
+
+    const resolutionRateThisMonth = calculateResolutionRate(callsThisMonth);
+    const resolutionRateLastMonth = calculateResolutionRate(callsLastMonth);
+    const resolutionRateChange = resolutionRateThisMonth - resolutionRateLastMonth;
+
+    // Unique Contacts
+    const uniqueContacts = new Set(contacts.map((c) => c.phone || c.email)).size;
+    const uniqueContactsThisWeek = new Set(
+      contacts
+        .filter((c) => c.createdAt >= lastWeek)
+        .map((c) => c.phone || c.email)
+    ).size;
+    const uniqueContactsLastWeek = new Set(
+      contacts
+        .filter(
+          (c) =>
+            c.createdAt >= new Date(lastWeek.getTime() - 7 * 24 * 60 * 60 * 1000) &&
+            c.createdAt < lastWeek
+        )
+        .map((c) => c.phone || c.email)
+    ).size;
+    const uniqueContactsChange = uniqueContactsThisWeek - uniqueContactsLastWeek;
+
+    // Total calls change (this month vs last month)
+    const totalCallsThisMonth = callsThisMonth.length;
+    const totalCallsLastMonth = callsLastMonth.length;
+    const totalCallsChange =
+      totalCallsLastMonth > 0
+        ? ((totalCallsThisMonth - totalCallsLastMonth) / totalCallsLastMonth) * 100
+        : totalCallsThisMonth > 0
+        ? 100
+        : 0;
+
     // Agent performance
     const agentPerformance = agents.map((agent) => {
       const agentId = agent._id.toString();
@@ -181,26 +291,43 @@ export class DashboardService {
         (call) =>
           call.agentId?.toString() === agentId || call.agent === agent.name
       );
-      const success = agentCalls.filter(
+      const successfulCalls = agentCalls.filter(
         (call) => call.outcome === "success"
       ).length;
+      const successRate =
+        agentCalls.length > 0
+          ? (successfulCalls / agentCalls.length) * 100
+          : 0;
 
       return {
         name: agent.name,
         calls: agentCalls.length,
-        success,
+        success: Math.round(successRate * 10) / 10,
       };
     });
 
-    // Call type data
+    // Call type data with percentages
+    const totalCalls = calls.length;
     const inbound = calls.filter((c) => c.type === "inbound").length;
     const outbound = calls.filter((c) => c.type === "outbound").length;
     const missed = calls.filter((c) => c.type === "missed").length;
 
     const callTypeData = [
-      { name: "Inbound", value: inbound, color: "#3b82f6" },
-      { name: "Outbound", value: outbound, color: "#10b981" },
-      { name: "Missed", value: missed, color: "#ef4444" },
+      {
+        name: "Inbound",
+        value: totalCalls > 0 ? Math.round((inbound / totalCalls) * 100) : 0,
+        color: "#3b82f6",
+      },
+      {
+        name: "Outbound",
+        value: totalCalls > 0 ? Math.round((outbound / totalCalls) * 100) : 0,
+        color: "#10b981",
+      },
+      {
+        name: "Missed",
+        value: totalCalls > 0 ? Math.round((missed / totalCalls) * 100) : 0,
+        color: "#ef4444",
+      },
     ];
 
     return {
@@ -208,6 +335,14 @@ export class DashboardService {
       hourlyData,
       agentPerformance,
       callTypeData,
+      // New metrics
+      avgHandleTime: ahtThisMonth,
+      avgHandleTimeChange: Math.round(ahtChange * 10) / 10,
+      resolutionRate: Math.round(resolutionRateThisMonth * 10) / 10,
+      resolutionRateChange: Math.round(resolutionRateChange * 10) / 10,
+      uniqueContacts,
+      uniqueContactsChange,
+      totalCallsChange: Math.round(totalCallsChange * 10) / 10,
     };
   }
 
