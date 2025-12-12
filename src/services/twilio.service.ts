@@ -10,6 +10,7 @@ export class TwilioService {
   private readonly authToken: string;
   private readonly webhookBaseUrl: string;
   private readonly staticPhoneNumber: string;
+  private readonly addressSid: string; // Twilio Address SID for Australian number purchases
 
   constructor(private configService: ConfigService) {
     this.accountSid =
@@ -30,6 +31,11 @@ export class TwilioService {
     this.staticPhoneNumber =
       process.env.TWILIO_STATIC_PHONE_NUMBER ||
       this.configService.get<string>("TWILIO_STATIC_PHONE_NUMBER") ||
+      "";
+
+    this.addressSid =
+      process.env.TWILIO_ADDRESS_SID ||
+      this.configService.get<string>("TWILIO_ADDRESS_SID") ||
       "";
 
     if (!this.accountSid || !this.authToken) {
@@ -114,27 +120,107 @@ export class TwilioService {
   }
 
   /**
+   * List all purchased phone numbers in Twilio account
+   * @returns Array of phone number details
+   */
+  async listPurchasedPhoneNumbers(): Promise<Array<{
+    phoneNumber: string;
+    phoneNumberSid: string;
+  }>> {
+    if (!this.accountSid || !this.authToken) {
+      throw new HttpException(
+        "Twilio credentials are not configured.",
+        HttpStatus.UNAUTHORIZED
+      );
+    }
+
+    try {
+      this.logger.log("Fetching all purchased phone numbers from Twilio...");
+      const phoneNumbers = await this.client.incomingPhoneNumbers.list();
+      
+      const result = phoneNumbers.map(num => ({
+        phoneNumber: num.phoneNumber || "",
+        phoneNumberSid: num.sid,
+      }));
+
+      this.logger.log(`Found ${result.length} purchased phone numbers in Twilio account`);
+      return result;
+    } catch (error: any) {
+      this.logger.error(
+        `Error listing purchased phone numbers: ${error.message}`,
+        error.stack
+      );
+      throw new HttpException(
+        `Failed to list purchased phone numbers: ${error.message || "Unknown error"}`,
+        error.status || error.statusCode || HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+
+  /**
    * Get or purchase a phone number for an agent
-   * Uses static phone number if configured, otherwise purchases a new one
+   * First checks for available (unassigned) phone numbers, then purchases a new one if needed
+   * @param assignedPhoneNumbers Array of phone numbers already assigned to agents (to avoid reuse)
    * @returns Phone number details
    */
-  async getOrPurchasePhoneNumber(): Promise<{
+  async getOrPurchasePhoneNumber(assignedPhoneNumbers: string[] = []): Promise<{
     phoneNumber: string;
     phoneNumberSid: string;
   }> {
-    // If static phone number is configured, use it
-    if (this.staticPhoneNumber) {
-      const normalizedNumber = this.normalizePhoneNumber(this.staticPhoneNumber);
-      this.logger.log(`Using static phone number: ${normalizedNumber}`);
-      const phoneNumberSid = await this.getPhoneNumberSid(normalizedNumber);
-      return {
-        phoneNumber: normalizedNumber,
-        phoneNumberSid: phoneNumberSid,
-      };
+    if (!this.accountSid || !this.authToken) {
+      throw new HttpException(
+        "Twilio credentials are not configured.",
+        HttpStatus.UNAUTHORIZED
+      );
     }
 
-    // Otherwise, purchase a new number
-    return this.purchaseAustralianNumber();
+    try {
+      // Step 1: List all purchased phone numbers from Twilio
+      this.logger.log("Checking for available phone numbers in Twilio account...");
+      const purchasedNumbers = await this.listPurchasedPhoneNumbers();
+      
+      // Normalize assigned numbers for comparison
+      const normalizedAssigned = assignedPhoneNumbers.map(num => 
+        this.normalizePhoneNumber(num)
+      );
+
+      // Step 2: Find an available (unassigned) phone number
+      for (const purchased of purchasedNumbers) {
+        const normalizedPurchased = this.normalizePhoneNumber(purchased.phoneNumber);
+        
+        // Skip if this number is already assigned to an agent
+        if (normalizedAssigned.includes(normalizedPurchased)) {
+          this.logger.log(`Phone number ${normalizedPurchased} is already assigned, skipping...`);
+          continue;
+        }
+
+        // Skip static phone number if configured (to avoid reusing it)
+        if (this.staticPhoneNumber) {
+          const normalizedStatic = this.normalizePhoneNumber(this.staticPhoneNumber);
+          if (normalizedPurchased === normalizedStatic) {
+            this.logger.log(`Skipping static phone number: ${normalizedPurchased}`);
+            continue;
+          }
+        }
+
+        // Found an available number!
+        this.logger.log(`Found available phone number: ${normalizedPurchased} (SID: ${purchased.phoneNumberSid})`);
+        return {
+          phoneNumber: normalizedPurchased,
+          phoneNumberSid: purchased.phoneNumberSid,
+        };
+      }
+
+      // Step 3: No available numbers found, purchase a new one
+      this.logger.log("No available phone numbers found, purchasing a new Australian number...");
+      return await this.purchaseAustralianNumber();
+    } catch (error: any) {
+      this.logger.error(
+        `Error getting or purchasing phone number: ${error.message}`,
+        error.stack
+      );
+      throw error;
+    }
   }
 
   /**
@@ -176,9 +262,25 @@ export class TwilioService {
         `Purchasing phone number: ${numberToPurchase.phoneNumber}`
       );
 
-      const purchasedNumber = await this.client.incomingPhoneNumbers.create({
+      // Australian phone numbers require an address SID
+      // Try to get or create an address if not provided
+      let addressSidToUse = this.addressSid;
+      if (!addressSidToUse) {
+        this.logger.log("No TWILIO_ADDRESS_SID configured, attempting to find existing address...");
+        addressSidToUse = await this.getOrCreateAustralianAddress();
+      }
+
+      const purchaseParams: any = {
         phoneNumber: numberToPurchase.phoneNumber,
-      });
+      };
+
+      // Add address SID if we have one (required for Australian numbers)
+      if (addressSidToUse) {
+        purchaseParams.addressSid = addressSidToUse;
+        this.logger.log(`Using address SID: ${addressSidToUse} for phone number purchase`);
+      }
+
+      const purchasedNumber = await this.client.incomingPhoneNumbers.create(purchaseParams);
 
       this.logger.log(
         `Successfully purchased phone number: ${purchasedNumber.phoneNumber} (SID: ${purchasedNumber.sid})`
@@ -205,6 +307,17 @@ export class TwilioService {
         throw new HttpException(
           "No available Australian phone numbers found.",
           HttpStatus.NOT_FOUND
+        );
+      }
+
+      // Handle address requirement error specifically
+      if (error.message && error.message.includes("AddressSid")) {
+        throw new HttpException(
+          `Australian phone numbers require a verified address in Twilio. Please either:\n` +
+          `1. Set TWILIO_ADDRESS_SID environment variable with an existing address SID, or\n` +
+          `2. Create an address in your Twilio Console and set the TWILIO_ADDRESS_SID.\n\n` +
+          `Original error: ${error.message}`,
+          HttpStatus.BAD_REQUEST
         );
       }
 
@@ -278,6 +391,45 @@ export class TwilioService {
         `Failed to configure Twilio webhook: ${error.message || "Unknown error"}`,
         error.status || error.statusCode || HttpStatus.INTERNAL_SERVER_ERROR
       );
+    }
+  }
+
+  /**
+   * Get or find an existing Australian address in Twilio
+   * Australian phone numbers require a verified address
+   * @returns Address SID if found, undefined otherwise
+   */
+  private async getOrCreateAustralianAddress(): Promise<string | undefined> {
+    if (!this.accountSid || !this.authToken) {
+      return undefined;
+    }
+
+    try {
+      // First, try to list existing addresses
+      this.logger.log("Checking for existing Australian addresses in Twilio...");
+      const addresses = await this.client.addresses.list({ limit: 20 });
+      
+      // Find an Australian address
+      const australianAddress = addresses.find(addr => 
+        addr.isoCountry === "AU"
+      );
+
+      if (australianAddress) {
+        this.logger.log(`Found existing Australian address: ${australianAddress.sid}`);
+        return australianAddress.sid;
+      }
+
+      this.logger.warn(
+        "No existing Australian address found in Twilio account. " +
+        "Please create an address in the Twilio Console or set TWILIO_ADDRESS_SID environment variable."
+      );
+      return undefined;
+    } catch (error: any) {
+      this.logger.error(
+        `Error checking for addresses: ${error.message}`,
+        error.stack
+      );
+      return undefined;
     }
   }
 

@@ -17,6 +17,11 @@ TWILIO_AUTH_TOKEN=your_twilio_auth_token_here
 # Format: E.164 format with or without spaces (e.g., +61341517921 or +61 3 4151 7921)
 # The system will automatically normalize it to E.164 format
 TWILIO_STATIC_PHONE_NUMBER=+61 3 4151 7921
+# Twilio Address SID for Australian number purchases (optional but recommended)
+# Australian phone numbers require a verified address in Twilio
+# If not set, the system will try to find an existing Australian address automatically
+# You can create an address in Twilio Console and get the SID from there
+TWILIO_ADDRESS_SID=ADxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 # Webhook Configuration
 # Base URL for webhooks (e.g., https://your-domain.com or https://your-ngrok-url.ngrok.io)

@@ -142,7 +142,19 @@ export class AgentsService {
     // Step 3: Get or purchase Australian Twilio phone number
     try {
       this.logger.log(`Getting Twilio phone number for agent: ${createAgentDto.name}`);
-      const twilioNumber = await this.twilioService.getOrPurchasePhoneNumber();
+      
+      // Get list of phone numbers already assigned to other agents
+      const existingAgents = await this.agentModel.find({ 
+        phoneNumber: { $exists: true, $ne: null } 
+      });
+      const assignedPhoneNumbers = existingAgents
+        .map(agent => agent.phoneNumber)
+        .filter((num): num is string => !!num);
+      
+      this.logger.log(`Found ${assignedPhoneNumbers.length} agents with assigned phone numbers`);
+      
+      // Get or purchase a phone number (will check for available numbers first)
+      const twilioNumber = await this.twilioService.getOrPurchasePhoneNumber(assignedPhoneNumbers);
       twilioPhoneNumberSid = twilioNumber.phoneNumberSid;
       twilioPhoneNumber = twilioNumber.phoneNumber;
       this.logger.log(`Twilio phone number configured: ${twilioPhoneNumber} (SID: ${twilioPhoneNumberSid})`);
