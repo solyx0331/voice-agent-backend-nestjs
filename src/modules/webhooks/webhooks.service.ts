@@ -314,6 +314,7 @@ export class WebhooksService {
     }
 
     // Update outcome based on disconnection reason
+    // If no disconnection_reason is provided, default to success if call completed normally
     if (callData.disconnection_reason) {
       const reason = callData.disconnection_reason.toLowerCase();
       if (reason === "user_hangup") {
@@ -325,6 +326,9 @@ export class WebhooksService {
       } else {
         updates.outcome = "success"; // Default to success for other reasons
       }
+    } else if (callData.call_status === "ended" && updates.status === "completed") {
+      // If call ended normally without a disconnection reason, consider it successful
+      updates.outcome = "success";
     }
 
     // Update latency if available (use e2e latency as average)

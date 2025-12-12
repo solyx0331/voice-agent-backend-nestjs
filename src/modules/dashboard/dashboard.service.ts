@@ -26,7 +26,11 @@ export class DashboardService {
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
 
-    const [totalCallsToday, activeAgents, allCallsToday, allCallsYesterday, activeCalls] = await Promise.all([
+    // Calculate this month's date range for success rate
+    const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const thisMonthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+
+    const [totalCallsToday, activeAgents, allCallsToday, allCallsYesterday, activeCalls, allCallsThisMonth] = await Promise.all([
       this.callModel.countDocuments({
         createdAt: { $gte: today, $lt: tomorrow },
       }),
@@ -40,6 +44,10 @@ export class DashboardService {
       // Get currently active calls (status: "ongoing" or calls that started but haven't ended)
       this.callModel.find({
         status: "ongoing",
+      }),
+      // Get all calls from this month for success rate calculation
+      this.callModel.find({
+        createdAt: { $gte: thisMonthStart, $lt: thisMonthEnd },
       }),
     ]);
 
@@ -58,11 +66,22 @@ export class DashboardService {
     };
 
     // Helper function to calculate success rate
+    // A call is considered successful if:
+    // 1. outcome === "success", OR
+    // 2. status === "completed" AND outcome is not explicitly "caller_hung_up" or "speech_not_recognized"
     const calculateSuccessRate = (calls: CallDocument[]): number => {
       if (calls.length === 0) return 0;
-      const successfulCalls = calls.filter(
-        (call) => call.outcome === "success"
-      ).length;
+      const successfulCalls = calls.filter((call) => {
+        // Explicit success
+        if (call.outcome === "success") return true;
+        // If status is completed and no negative outcome, consider it successful
+        if (call.status === "completed" && !call.outcome) return true;
+        // If status is completed and outcome is not explicitly negative
+        if (call.status === "completed" && call.outcome && call.outcome !== "caller_hung_up" && call.outcome !== "speech_not_recognized") {
+          return true;
+        }
+        return false;
+      }).length;
       return (successfulCalls / calls.length) * 100;
     };
 
@@ -71,12 +90,16 @@ export class DashboardService {
     const avgMinutes = Math.floor(avgSecondsToday / 60);
     const avgSecs = Math.floor(avgSecondsToday % 60);
     const avgDuration = `${avgMinutes}:${avgSecs.toString().padStart(2, "0")}`;
-    const successRateToday = calculateSuccessRate(allCallsToday);
+    
+    // Calculate success rate for this month (not just today)
+    const successRateThisMonth = calculateSuccessRate(allCallsThisMonth);
+    
+    // For comparison, calculate yesterday's success rate
+    const successRateYesterday = calculateSuccessRate(allCallsYesterday);
 
     // Calculate yesterday's metrics
     const totalCallsYesterday = allCallsYesterday.length;
     const avgSecondsYesterday = calculateAvgDurationSeconds(allCallsYesterday);
-    const successRateYesterday = calculateSuccessRate(allCallsYesterday);
 
     // Calculate percentage changes
     // Formula: ((today - yesterday) / yesterday) * 100
@@ -94,11 +117,19 @@ export class DashboardService {
         ? 100 // If yesterday had 0 duration and today has duration, it's 100% increase
         : 0; // If both are 0, no change
 
+    // Calculate success rate change (this month vs last month)
+    const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 1);
+    const allCallsLastMonth = await this.callModel.find({
+      createdAt: { $gte: lastMonthStart, $lt: lastMonthEnd },
+    });
+    const successRateLastMonth = calculateSuccessRate(allCallsLastMonth);
+    
     const successRateChange =
-      successRateYesterday > 0
-        ? successRateToday - successRateYesterday
-        : successRateToday > 0
-        ? successRateToday // If yesterday had 0% and today has a rate, use today's rate as change
+      successRateLastMonth > 0
+        ? successRateThisMonth - successRateLastMonth
+        : successRateThisMonth > 0
+        ? successRateThisMonth // If last month had 0% and this month has a rate, use this month's rate as change
         : 0; // If both are 0, no change
 
     return {
@@ -106,7 +137,7 @@ export class DashboardService {
       activeAgents,
       activeCallsCount: activeCalls.length,
       avgCallDuration: avgDuration,
-      successRate: Math.round(successRateToday * 10) / 10,
+      successRate: Math.round(successRateThisMonth * 10) / 10, // Use monthly success rate
       callsChange: Math.round(callsChange * 10) / 10,
       durationChange: Math.round(durationChange * 10) / 10,
       successRateChange: Math.round(successRateChange * 10) / 10,
