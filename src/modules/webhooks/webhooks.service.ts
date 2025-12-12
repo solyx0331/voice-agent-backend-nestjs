@@ -6,6 +6,7 @@ import { Call, CallDocument } from "../../schemas/call.schema";
 import { RetellService } from "../../services/retell.service";
 import { ElevenLabsService } from "../../services/elevenlabs.service";
 import { StorageService } from "../../services/storage.service";
+import { EmailService } from "../../services/email.service";
 import { LiveCallsGateway } from "../websocket/websocket.gateway";
 
 @Injectable()
@@ -20,6 +21,7 @@ export class WebhooksService {
     private retellService: RetellService,
     private elevenLabsService: ElevenLabsService,
     private storageService: StorageService,
+    private emailService: EmailService,
     @Inject(forwardRef(() => LiveCallsGateway))
     private liveCallsGateway: LiveCallsGateway
   ) {}
@@ -367,6 +369,7 @@ export class WebhooksService {
     }
 
     // Update call analysis if available (from call_analyzed event or included in call_ended)
+    let extractedData: Record<string, any> = {};
     if (callData.call_analysis) {
       // Map Retell sentiment to our format (lowercase)
       let sentiment: "positive" | "neutral" | "negative" | "unknown" | undefined;
@@ -377,11 +380,37 @@ export class WebhooksService {
         }
       }
 
+      extractedData = callData.call_analysis.custom_analysis_data || {};
       updates.callAnalysis = {
         sentiment: sentiment,
         summary: callData.call_analysis.call_summary,
-        extractedData: callData.call_analysis.custom_analysis_data || {},
+        extractedData: extractedData,
       };
+    }
+
+    // Extract data from transcript if not already extracted (post-call extraction)
+    // This happens after call ends, so agent doesn't prompt for this information
+    if (updates.transcript && Object.keys(extractedData).length === 0) {
+      extractedData = this.extractDataFromTranscript(updates.transcript);
+      if (updates.callAnalysis) {
+        updates.callAnalysis.extractedData = extractedData;
+      } else {
+        updates.callAnalysis = {
+          extractedData: extractedData,
+        };
+      }
+    }
+
+    // Extract data from transcript if not already extracted (post-call extraction)
+    if (updates.transcript && Object.keys(extractedData).length === 0) {
+      extractedData = this.extractDataFromTranscript(updates.transcript);
+      if (updates.callAnalysis) {
+        updates.callAnalysis.extractedData = extractedData;
+      } else {
+        updates.callAnalysis = {
+          extractedData: extractedData,
+        };
+      }
     }
 
     // Update call cost if available
@@ -411,8 +440,314 @@ export class WebhooksService {
       if (agent) {
         agent.calls = (agent.calls || 0) + 1;
         await agent.save();
+
+        // Send email notification if configured
+        if (agent.notifications?.email && updatedCall) {
+          await this.sendCallSummaryEmail(agent, updatedCall);
+        }
       }
     }
+  }
+
+  /**
+   * Send email notification with call summary to the caller
+   * @param agent Agent configuration
+   * @param call Call document with analysis
+   */
+  private async sendCallSummaryEmail(agent: VoiceAgentDocument, call: CallDocument): Promise<void> {
+    try {
+      // Extract caller's email from call analysis (collected during lead capture)
+      const extractedData = call.callAnalysis?.extractedData || {};
+      const callerEmail = extractedData.email;
+      
+      if (!callerEmail) {
+        this.logger.log(`No caller email found in call ${call._id}. Skipping email.`);
+        return;
+      }
+
+      // Extract all data from call analysis - use exact information gained during call
+      const callSummary = call.callAnalysis?.summary || "No summary available";
+
+      // Build email data from all extracted fields with exact information gained during call
+      const emailData: Record<string, any> = {
+        ...extractedData, // Include all extracted data first (exact values from call)
+        // Map common field names (PascalCase for template) - use exact values, empty string if not provided
+        CompanyName: extractedData.companyName || extractedData.company || "",
+        CallerName: extractedData.callerName || extractedData.name || call.contact || "",
+        PhoneNumber: call.phone || extractedData.phoneNumber || extractedData.phone || "",
+        Email: callerEmail,
+        ServiceType: extractedData.serviceType || extractedData.service || "",
+        Budget: extractedData.budget || "",
+        BusinessType: extractedData.businessType || extractedData.business || "",
+        CompanySize: extractedData.companySize || "",
+        Timeline: extractedData.timeline || extractedData.timeframe || "",
+        AgentGeneratedSummary: callSummary,
+        // Also include camelCase versions for compatibility
+        companyName: extractedData.companyName || extractedData.company || "",
+        callerName: extractedData.callerName || extractedData.name || call.contact || "",
+        phoneNumber: call.phone || extractedData.phoneNumber || extractedData.phone || "",
+        email: callerEmail,
+        serviceType: extractedData.serviceType || extractedData.service || "",
+        budget: extractedData.budget || "",
+        businessType: extractedData.businessType || extractedData.business || "",
+        companySize: extractedData.companySize || "",
+        timeline: extractedData.timeline || extractedData.timeframe || "",
+        callSummary: callSummary,
+      };
+
+      // Generate email subject from template or use default
+      const subjectTemplate = agent.emailTemplate?.subjectFormat || "New Inquiry - {{CompanyName}} - {{CallerName}}";
+      const subject = this.replaceTemplateVariables(subjectTemplate, emailData);
+
+      // Generate email body using template with exact information replacement
+      const bodyTemplate = agent.emailTemplate?.bodyTemplate || `Company: {{CompanyName}}
+
+Name: {{CallerName}}
+
+Phone: {{PhoneNumber}}
+
+Email: {{Email}}
+
+Service Interested In: {{ServiceType}}
+
+Budget (if provided): {{Budget}}
+
+Business Type (if provided): {{BusinessType}}
+
+Company Size (QW Direct): {{CompanySize}}
+
+Timeline: {{Timeline}}
+
+Call Summary:
+
+{{AgentGeneratedSummary}}`;
+      
+      const emailBody = this.emailService.generateCallSummaryEmailFromTemplate(bodyTemplate, emailData);
+
+      // Send email to client (caller) with exact information collected during call
+      await this.emailService.sendEmail(callerEmail, subject, emailBody);
+      this.logger.log(`Call summary email sent to client ${callerEmail} for call ${call._id}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to send call summary email: ${error.message}`, error.stack);
+      // Don't throw - email failure shouldn't break the call flow
+    }
+  }
+
+  /**
+   * Generate email template fields dynamically from agent configuration
+   * Based on lead capture fields and information gathering questions
+   */
+  private generateEmailTemplateFields(agent: VoiceAgentDocument): Array<{
+    label: string;
+    fieldName: string;
+    includeInEmail: boolean;
+  }> {
+    const fields: Array<{ label: string; fieldName: string; includeInEmail: boolean }> = [];
+    const seenFieldNames = new Set<string>();
+
+    // Add lead capture fields from routing logics first (these have explicit field names)
+    agent.baseLogic?.routingLogics?.forEach((routing) => {
+      routing.leadCaptureFields?.forEach((field) => {
+        if (!seenFieldNames.has(field.name)) {
+          fields.push({
+            label: field.question || field.name,
+            fieldName: field.name,
+            includeInEmail: true,
+          });
+          seenFieldNames.add(field.name);
+        }
+      });
+    });
+
+    // Add universal lead capture fields if they exist (from leadCapture.fields)
+    if (agent.leadCapture?.fields) {
+      agent.leadCapture.fields.forEach((field: any) => {
+        if (!seenFieldNames.has(field.name)) {
+          fields.push({
+            label: field.question || field.name,
+            fieldName: field.name,
+            includeInEmail: true,
+          });
+          seenFieldNames.add(field.name);
+        }
+      });
+    }
+
+    // Add information gathering questions from routing logics
+    // These don't have explicit field names, so we'll use the question text as a key
+    // The LLM should extract answers and store them in extractedData
+    agent.baseLogic?.routingLogics?.forEach((routing) => {
+      routing.informationGathering?.forEach((item, index) => {
+        // Try to infer field name from question (e.g., "What is your budget?" -> "budget")
+        // For now, we'll use a generic approach and let the LLM extract the data
+        // The extracted data should match the question context
+        const questionKey = item.question?.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 30) || `info_${index}`;
+        if (!seenFieldNames.has(questionKey)) {
+          fields.push({
+            label: item.question || `Information ${index + 1}`,
+            fieldName: questionKey,
+            includeInEmail: true,
+          });
+          seenFieldNames.add(questionKey);
+        }
+      });
+    });
+
+    // Always include call summary at the end
+    fields.push({
+      label: "Call Summary",
+      fieldName: "callSummary",
+      includeInEmail: true,
+    });
+
+    return fields;
+  }
+
+  /**
+   * Replace template variables in a string with actual values
+   */
+  private replaceTemplateVariables(template: string, data: Record<string, any>): string {
+    return template.replace(/\{\{([^}]+)\}\}/g, (match, fieldName) => {
+      // Try exact match first
+      if (data[fieldName] !== undefined) {
+        return data[fieldName] || "";
+      }
+      // Try camelCase
+      const camelCase = fieldName.charAt(0).toLowerCase() + fieldName.slice(1);
+      if (data[camelCase] !== undefined) {
+        return data[camelCase] || "";
+      }
+      // Try common field mappings
+      const fieldMap: Record<string, string> = {
+        CompanyName: data.companyName || data.company || "",
+        CallerName: data.callerName || data.name || "",
+        PhoneNumber: data.phoneNumber || data.phone || "",
+        Email: data.email || "",
+      };
+      return fieldMap[fieldName] || "";
+    });
+  }
+
+  /**
+   * Extract data from transcript after call ends
+   * Analyzes the transcript to extract key information without prompting the agent
+   */
+  private extractDataFromTranscript(transcript: Array<{ speaker: string; text: string; timestamp: string }>): Record<string, any> {
+    const extracted: Record<string, any> = {};
+    const fullText = transcript.map(t => t.text).join(" ").toLowerCase();
+
+    // Extract company name
+    const companyPatterns = [
+      /(?:company|business|organization|firm|corporation)[\s:]+(?:is|called|named|name is|)?[\s:]*([A-Z][a-zA-Z\s]+(?:Sound|Direct|Inc|LLC|Corp|Ltd)?)/i,
+      /(?:calling|contacting|reaching|speaking with|about|for)[\s:]+([A-Z][a-zA-Z\s]+(?:Sound|Direct|Inc|LLC|Corp|Ltd)?)/i,
+      /(evolved sound|qw direct)/i,
+    ];
+    for (const pattern of companyPatterns) {
+      const match = fullText.match(pattern);
+      if (match) {
+        extracted.companyName = match[1]?.trim();
+        break;
+      }
+    }
+
+    // Extract caller name
+    const namePatterns = [
+      /(?:my name is|i'm|i am|this is|caller name|name)[\s:]+([A-Z][a-zA-Z\s]+)/i,
+      /(?:name)[\s:]+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)/i,
+    ];
+    for (const pattern of namePatterns) {
+      const match = fullText.match(pattern);
+      if (match) {
+        extracted.callerName = match[1]?.trim();
+        break;
+      }
+    }
+
+    // Extract email
+    const emailPattern = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i;
+    const emailMatch = fullText.match(emailPattern);
+    if (emailMatch) {
+      extracted.email = emailMatch[1];
+    }
+
+    // Extract phone number
+    const phonePatterns = [
+      /(?:phone|number|contact|call me at|reach me at)[\s:]+([+]?[\d\s\-\(\)]{10,})/i,
+      /([+]?[\d\s\-\(\)]{10,})/,
+    ];
+    for (const pattern of phonePatterns) {
+      const match = fullText.match(pattern);
+      if (match && match[1].replace(/\D/g, "").length >= 10) {
+        extracted.phoneNumber = match[1].trim();
+        break;
+      }
+    }
+
+    // Extract service type
+    const servicePatterns = [
+      /(?:service|looking for|interested in|need|want|enquiring about|enquiry)[\s:]+([^.!?]+)/i,
+      /(?:voice over|audio production|direct marketing|digital campaign|marketing|production)/i,
+    ];
+    for (const pattern of servicePatterns) {
+      const match = fullText.match(pattern);
+      if (match) {
+        extracted.serviceType = match[1]?.trim();
+        break;
+      }
+    }
+
+    // Extract budget
+    const budgetPatterns = [
+      /(?:budget|price|cost|spending|willing to pay|around|approximately|about)[\s:]+([$]?[\d,]+(?:\s*(?:thousand|k|million|m|dollars|usd))?)/i,
+      /[$]([\d,]+)/,
+    ];
+    for (const pattern of budgetPatterns) {
+      const match = fullText.match(pattern);
+      if (match) {
+        extracted.budget = match[1]?.trim();
+        break;
+      }
+    }
+
+    // Extract business type
+    const businessPatterns = [
+      /(?:individual|person|personal|business|company|corporate|b2b|b2c)/i,
+    ];
+    for (const pattern of businessPatterns) {
+      const match = fullText.match(pattern);
+      if (match) {
+        extracted.businessType = match[0]?.trim();
+        break;
+      }
+    }
+
+    // Extract company size
+    const sizePatterns = [
+      /(?:company size|size|employees|staff|people|team)[\s:]+([\d,]+(?:\s*(?:employees|people|staff|members))?)/i,
+      /(?:small|medium|large|enterprise|startup)/i,
+    ];
+    for (const pattern of sizePatterns) {
+      const match = fullText.match(pattern);
+      if (match) {
+        extracted.companySize = match[1] || match[0];
+        break;
+      }
+    }
+
+    // Extract timeline
+    const timelinePatterns = [
+      /(?:timeline|timeframe|when|by|deadline|asap|soon|urgent|within)[\s:]+([^.!?]+)/i,
+      /(?:next week|next month|this week|this month|as soon as possible|asap|urgent)/i,
+    ];
+    for (const pattern of timelinePatterns) {
+      const match = fullText.match(pattern);
+      if (match) {
+        extracted.timeline = match[1] || match[0];
+        break;
+      }
+    }
+
+    return extracted;
   }
 
   /**

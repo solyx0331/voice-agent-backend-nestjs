@@ -95,6 +95,10 @@ export class CallRulesDto {
   @IsOptional()
   @IsString()
   voicemailMessage?: string;
+
+  @IsOptional()
+  @IsString()
+  secondAttemptMessage?: string;
 }
 
 export class LeadCaptureFieldDto {
@@ -143,6 +147,31 @@ export class NotificationsDto {
   crm?: CrmConfigDto;
 }
 
+export class EmailTemplateFieldDto {
+  @IsString()
+  label: string;
+
+  @IsString()
+  fieldName: string;
+
+  @IsBoolean()
+  includeInEmail: boolean;
+}
+
+export class EmailTemplateDto {
+  @IsString()
+  subjectFormat: string;
+
+  @IsString()
+  bodyTemplate: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => EmailTemplateFieldDto)
+  fields?: EmailTemplateFieldDto[];
+}
+
 export class LeadCaptureQuestionDto {
   @IsString()
   question: string;
@@ -159,18 +188,73 @@ export class ResponseLogicDto {
   response: string;
 }
 
+export class InformationGatheringQuestionDto {
+  @IsString()
+  question: string;
+}
+
+export class RoutingLeadCaptureFieldDto {
+  @IsString()
+  name: string;
+
+  @IsString()
+  question: string;
+
+  @IsBoolean()
+  required: boolean;
+
+  @IsEnum(["text", "email", "phone", "number"])
+  type: "text" | "email" | "phone" | "number";
+}
+
+export class RoutingLogicDto {
+  @IsString()
+  id: string;
+
+  @IsString()
+  name: string;
+
+  @IsString()
+  condition: string;
+
+  @IsString()
+  action: string;
+
+  @IsString()
+  response: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => InformationGatheringQuestionDto)
+  informationGathering: InformationGatheringQuestionDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RoutingLeadCaptureFieldDto)
+  leadCaptureFields: RoutingLeadCaptureFieldDto[];
+}
+
 export class BaseLogicDto {
   @IsString()
   greetingMessage: string;
 
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RoutingLogicDto)
+  routingLogics?: RoutingLogicDto[];
+
+  // Legacy fields for backward compatibility
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  primaryIntentPrompts: string[];
+  primaryIntentPrompts?: string[];
 
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => LeadCaptureQuestionDto)
-  leadCaptureQuestions: LeadCaptureQuestionDto[];
+  leadCaptureQuestions?: LeadCaptureQuestionDto[];
 
   @IsOptional()
   @IsArray()
@@ -230,6 +314,12 @@ export class CreateAgentDto {
   @ValidateNested()
   @Type(() => NotificationsDto)
   notifications?: NotificationsDto;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => EmailTemplateDto)
+  emailTemplate?: EmailTemplateDto;
 
   @IsOptional()
   @IsObject()
@@ -312,6 +402,12 @@ export class UpdateAgentDto {
   @ValidateNested()
   @Type(() => NotificationsDto)
   notifications?: NotificationsDto;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => EmailTemplateDto)
+  emailTemplate?: EmailTemplateDto;
 
   @IsOptional()
   @IsObject()

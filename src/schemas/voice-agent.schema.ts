@@ -81,6 +81,7 @@ export class VoiceAgent {
     };
     fallbackToVoicemail: boolean;
     voicemailMessage?: string;
+    secondAttemptMessage?: string;
   };
 
   @Prop({ type: Object })
@@ -104,10 +105,38 @@ export class VoiceAgent {
   };
 
   @Prop({ type: Object })
+  emailTemplate?: {
+    subjectFormat: string;
+    bodyTemplate: string;
+    fields?: Array<{
+      label: string;
+      fieldName: string;
+      includeInEmail: boolean;
+    }>;
+  };
+
+  @Prop({ type: Object })
   baseLogic?: {
     greetingMessage: string;
-    primaryIntentPrompts: string[];
-    leadCaptureQuestions: Array<{
+    routingLogics?: Array<{
+      id: string;
+      name: string;
+      condition: string;
+      action: string;
+      response: string;
+      informationGathering: Array<{
+        question: string;
+      }>;
+      leadCaptureFields: Array<{
+        name: string;
+        question: string;
+        required: boolean;
+        type: "text" | "email" | "phone" | "number";
+      }>;
+    }>;
+    // Legacy fields for backward compatibility
+    primaryIntentPrompts?: string[];
+    leadCaptureQuestions?: Array<{
       question: string;
     }>;
     responseLogic?: Array<{

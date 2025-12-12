@@ -37,6 +37,13 @@ TWILIO_ADDRESS_SID=ADxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # Base URL for webhooks (e.g., https://your-domain.com or https://your-ngrok-url.ngrok.io)
 WEBHOOK_BASE_URL=https://your-domain.com
 
+# Email Configuration (optional)
+# For email notifications, configure one of the following:
+# Option 1: Use an email API service (e.g., SendGrid, Resend, AWS SES)
+EMAIL_API_URL=https://api.emailservice.com/send
+EMAIL_API_KEY=your_email_api_key_here
+# Option 2: If not configured, emails will be logged to console (for development/testing)
+
 # Server Configuration
 PORT=8000
 NODE_ENV=development

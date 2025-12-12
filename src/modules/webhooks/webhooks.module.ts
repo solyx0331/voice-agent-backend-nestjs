@@ -7,6 +7,7 @@ import { Call, CallSchema } from "../../schemas/call.schema";
 import { RetellService } from "../../services/retell.service";
 import { ElevenLabsService } from "../../services/elevenlabs.service";
 import { StorageService } from "../../services/storage.service";
+import { EmailService } from "../../services/email.service";
 import { WebSocketModule } from "../websocket/websocket.module";
 
 @Module({
@@ -18,7 +19,7 @@ import { WebSocketModule } from "../websocket/websocket.module";
     forwardRef(() => WebSocketModule),
   ],
   controllers: [WebhooksController],
-  providers: [WebhooksService, RetellService, ElevenLabsService, StorageService],
+  providers: [WebhooksService, RetellService, ElevenLabsService, StorageService, EmailService],
   exports: [WebhooksService],
 })
 export class WebhooksModule {}

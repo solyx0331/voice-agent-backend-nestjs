@@ -193,6 +193,63 @@ export class RetellService {
       prompt += `You are ${createAgentDto.name}, a professional voice AI assistant.\n\n`;
     }
 
+    // Base logic - greeting message and routing logic
+    if (createAgentDto.baseLogic) {
+      if (createAgentDto.baseLogic.greetingMessage) {
+        prompt += `Initial Greeting: ${createAgentDto.baseLogic.greetingMessage}\n\n`;
+      }
+
+      // New routingLogics structure (each block contains routing rules + information gathering + lead capture)
+      if (createAgentDto.baseLogic.routingLogics && createAgentDto.baseLogic.routingLogics.length > 0) {
+        prompt += "Routing Logic Blocks:\n";
+        createAgentDto.baseLogic.routingLogics.forEach((routing: any, index: number) => {
+          prompt += `\nRouting Block ${index + 1} (${routing.name || `Route ${index + 1}`}):\n`;
+          prompt += `- Condition: ${routing.condition}\n`;
+          prompt += `- Action: ${routing.action}\n`;
+          prompt += `- Response: ${routing.response}\n`;
+          
+          // Information gathering for this routing block
+          if (routing.informationGathering && routing.informationGathering.length > 0) {
+            prompt += `- Information Gathering Questions for this route:\n`;
+            routing.informationGathering.forEach((item: any) => {
+              prompt += `  * ${item.question}\n`;
+            });
+          }
+          
+          // Lead capture fields for this routing block
+          if (routing.leadCaptureFields && routing.leadCaptureFields.length > 0) {
+            prompt += `- Lead Capture Fields for this route:\n`;
+            routing.leadCaptureFields.forEach((field: any) => {
+              prompt += `  * ${field.name} (${field.type}): ${field.question}`;
+              if (field.required) {
+                prompt += " [Required]";
+              }
+              prompt += "\n";
+            });
+          }
+        });
+        prompt += "\n";
+      }
+
+      // Legacy support for old responseLogic structure
+      if (createAgentDto.baseLogic.responseLogic?.length > 0 && !createAgentDto.baseLogic.routingLogics) {
+        prompt += "Routing and Response Logic:\n";
+        createAgentDto.baseLogic.responseLogic.forEach((logic: any) => {
+          prompt += `- If ${logic.condition}, then ${logic.action}: ${logic.response}\n`;
+        });
+        prompt += "\n";
+      }
+
+      // Legacy support for old primaryIntentPrompts
+      if (createAgentDto.baseLogic.primaryIntentPrompts?.length > 0) {
+        prompt += "Primary intents to handle:\n";
+        createAgentDto.baseLogic.primaryIntentPrompts.forEach((intent: string, index: number) => {
+          prompt += `${index + 1}. ${intent}\n`;
+        });
+        prompt += "\n";
+      }
+    }
+
     // FAQs
     if (createAgentDto.faqs && createAgentDto.faqs.length > 0) {
       prompt += "Here are some frequently asked questions and their answers:\n";
@@ -215,40 +272,44 @@ export class RetellService {
       prompt += "\n";
     }
 
-    // Base logic
-    if (createAgentDto.baseLogic) {
-      if (createAgentDto.baseLogic.primaryIntentPrompts?.length > 0) {
-        prompt += "Primary intents to handle:\n";
-        createAgentDto.baseLogic.primaryIntentPrompts.forEach((intent: string, index: number) => {
-          prompt += `${index + 1}. ${intent}\n`;
+    // Lead capture instructions (legacy support - if not using routingLogics structure)
+    if (!createAgentDto.baseLogic?.routingLogics || createAgentDto.baseLogic.routingLogics.length === 0) {
+      const leadCaptureFields = createAgentDto.leadCapture?.fields || [];
+      const leadCaptureQuestions = createAgentDto.baseLogic?.leadCaptureQuestions || [];
+      
+      if (leadCaptureFields.length > 0 || leadCaptureQuestions.length > 0) {
+        prompt += "During the conversation, collect the following information:\n";
+        
+        // Add fields from leadCapture configuration
+        leadCaptureFields.forEach((field: any) => {
+          prompt += `- ${field.name} (${field.type}): ${field.question}`;
+          if (field.required) {
+            prompt += " [Required]";
+          }
+          prompt += "\n";
         });
-        prompt += "\n";
-      }
-
-      if (createAgentDto.baseLogic.responseLogic?.length > 0) {
-        prompt += "Response logic:\n";
-        createAgentDto.baseLogic.responseLogic.forEach((logic: any) => {
-          prompt += `- If ${logic.condition}, then ${logic.action}: ${logic.response}\n`;
+        
+        // Add questions from baseLogic
+        leadCaptureQuestions.forEach((item: any) => {
+          if (item.question) {
+            prompt += `- ${item.question}\n`;
+          }
         });
+        
         prompt += "\n";
       }
     }
 
-    // Lead capture instructions
-    if (createAgentDto.leadCapture?.fields && createAgentDto.leadCapture.fields.length > 0) {
-      prompt += "During the conversation, collect the following information:\n";
-      createAgentDto.leadCapture.fields.forEach((field: any) => {
-        prompt += `- ${field.name} (${field.type}): ${field.question}`;
-        if (field.required) {
-          prompt += " [Required]";
-        }
-        prompt += "\n";
-      });
-      prompt += "\n";
-    }
+    // Fallback and escalation rules
+    prompt += "Fallback Rules:\n";
+    prompt += "- If you don't understand the caller's response after asking twice, politely say: 'I'm sorry, I'm having trouble understanding you. Would you like to speak to a human representative instead?'\n";
+    prompt += "- Be patient and ask for clarification when needed.\n";
+    prompt += "- If the caller wants to speak to a human, acknowledge this and note it in the summary.\n\n";
 
     // General instructions
-    prompt += "Be professional, helpful, and concise. Keep responses natural and conversational.";
+    prompt += "Be professional, helpful, and concise. Keep responses natural and conversational. ";
+    prompt += "Always collect the required information before ending the call. ";
+    prompt += "At the end of the call, provide a clear summary of the conversation including all collected information.";
 
     return prompt;
   }
