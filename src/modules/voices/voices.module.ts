@@ -1,8 +1,10 @@
 import { Module } from "@nestjs/common";
 import { MongooseModule } from "@nestjs/mongoose";
 import { VoicesController } from "./voices.controller";
+import { VoiceUploadController } from "./voice-upload.controller";
 import { VoicesService } from "./voices.service";
 import { RetellService } from "../../services/retell.service";
+import { ElevenLabsService } from "../../services/elevenlabs.service";
 import { CustomVoice, CustomVoiceSchema } from "../../schemas/custom-voice.schema";
 
 @Module({
@@ -11,9 +13,9 @@ import { CustomVoice, CustomVoiceSchema } from "../../schemas/custom-voice.schem
       { name: CustomVoice.name, schema: CustomVoiceSchema },
     ]),
   ],
-  controllers: [VoicesController],
-  providers: [VoicesService, RetellService],
-  exports: [RetellService, VoicesService],
+  controllers: [VoicesController, VoiceUploadController],
+  providers: [VoicesService, RetellService, ElevenLabsService],
+  exports: [RetellService, VoicesService, ElevenLabsService],
 })
 export class VoicesModule {}
 

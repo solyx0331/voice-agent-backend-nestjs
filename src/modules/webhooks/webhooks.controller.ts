@@ -54,20 +54,35 @@ export class WebhooksController {
 
   /**
    * Handle incoming Retell webhook events
-   * Retell sends webhooks for call events (started, ended, transcript, analyzed)
+   * Retell sends webhooks for call events (started, ended, transcript, analyzed, function_call)
    * Configure this URL in Retell dashboard: https://your-backend.com/api/webhooks/retell
+   * 
+   * For function_call events (when LLM generates a response), we:
+   * 1. Get the agent's ElevenLabs voice_id
+   * 2. Generate TTS audio using ElevenLabs
+   * 3. Upload audio to public URL
+   * 4. Return play_audio action to Retell
    */
   @Post("retell")
-  async handleRetellWebhook(@Body() body: any) {
+  async handleRetellWebhook(@Body() body: any, @Res() res?: any) {
     try {
-      this.logger.log(`Received Retell webhook`);
+      this.logger.log(`Received Retell webhook: ${body.event || "unknown"}`);
       this.logger.debug(`Retell webhook payload: ${JSON.stringify(body, null, 2)}`);
 
-      // Process the Retell webhook
+      // Check if this is a function_call event that needs TTS
+      if (body.event === "function_call" || body.function_call) {
+        const response = await this.webhooksService.handleRetellFunctionCall(body);
+        if (response) {
+          // Return the play_audio action to Retell
+          return res ? res.json(response) : response;
+        }
+      }
+
+      // Process other Retell webhook events
       await this.webhooksService.handleRetellWebhook(body);
 
       // Retell webhooks expect a 200 OK response
-      return { status: "ok" };
+      return res ? res.json({ status: "ok" }) : { status: "ok" };
     } catch (error: any) {
       this.logger.error(
         `Error handling Retell webhook: ${error.message}`,
@@ -75,7 +90,7 @@ export class WebhooksController {
       );
       
       // Still return 200 to Retell to avoid retries for processing errors
-      return { status: "error", message: error.message };
+      return res ? res.json({ status: "error", message: error.message }) : { status: "error", message: error.message };
     }
   }
 }

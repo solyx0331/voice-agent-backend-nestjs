@@ -5,7 +5,7 @@ import { CustomVoice, CustomVoiceDocument } from "../../schemas/custom-voice.sch
 import { writeFile, unlink, readFile } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
-import { RetellService } from "../../services/retell.service";
+import { ElevenLabsService } from "../../services/elevenlabs.service";
 
 @Injectable()
 export class VoicesService {
@@ -15,7 +15,7 @@ export class VoicesService {
   constructor(
     @InjectModel(CustomVoice.name)
     private customVoiceModel: Model<CustomVoiceDocument>,
-    private retellService: RetellService
+    private elevenLabsService: ElevenLabsService
   ) {}
 
   async findAll(): Promise<CustomVoiceDocument[]> {
@@ -88,32 +88,30 @@ export class VoicesService {
     // Generate voice name
     const voiceName = name || file.originalname.replace(/\.[^/.]+$/, "") || `Custom Voice ${timestamp}`;
 
-    // Upload to Retell to get a real voice_id
-    let retellVoiceId: string | null = null;
+    // Upload to ElevenLabs Voice Lab API to create custom voice clone
+    let elevenLabsVoiceId: string | null = null;
     try {
-      this.logger.log(`Uploading voice to Retell: ${voiceName}`);
+      this.logger.log(`Creating custom voice in ElevenLabs: ${voiceName}`);
       
-      // Read the file as a buffer for Retell upload
-      const fileBuffer = file.buffer || await readFile(filepath);
+      // Upload to ElevenLabs to get a real voice_id
+      elevenLabsVoiceId = await this.elevenLabsService.createCustomVoice(
+        filepath,
+        voiceName
+      );
       
-      // Upload to Retell using their API
-      // Retell API endpoint: POST https://api.retellai.com/create-voice
-      // We'll use the RetellService to handle this
-      retellVoiceId = await this.retellService.uploadCustomVoice(filepath, voiceName, fileBuffer);
-      
-      this.logger.log(`Voice uploaded to Retell successfully. Voice ID: ${retellVoiceId}`);
+      this.logger.log(`Voice created in ElevenLabs successfully. Voice ID: ${elevenLabsVoiceId}`);
     } catch (error: any) {
-      this.logger.error(`Failed to upload voice to Retell: ${error.message}`, error.stack);
-      // Continue with local voice ID if Retell upload fails
-      // This allows the system to work even if Retell upload fails
-      retellVoiceId = `custom_voice_${timestamp}`;
-      this.logger.warn(`Using local voice ID: ${retellVoiceId}. Voice will not work with Retell agents until uploaded.`);
+      this.logger.error(`Failed to create voice in ElevenLabs: ${error.message}`, error.stack);
+      // Continue with local voice ID if ElevenLabs upload fails
+      // This allows the system to work even if ElevenLabs upload fails
+      elevenLabsVoiceId = `custom_voice_${timestamp}`;
+      this.logger.warn(`Using local voice ID: ${elevenLabsVoiceId}. Voice will not work until uploaded to ElevenLabs.`);
     }
 
     // Create custom voice record
     const customVoice = new this.customVoiceModel({
       name: voiceName,
-      voiceId: retellVoiceId, // This should be the Retell voice_id after upload
+      voiceId: elevenLabsVoiceId, // This is the ElevenLabs voice_id after upload
       url: `/uploads/voices/${urlFilename}`,
       type: type,
       fileName: file.originalname,
@@ -123,13 +121,23 @@ export class VoicesService {
 
     const saved = await customVoice.save();
 
-    this.logger.log(`Custom voice created: ${saved._id} (${voiceName}) with voiceId: ${retellVoiceId}`);
+    this.logger.log(`Custom voice created: ${saved._id} (${voiceName}) with ElevenLabs voiceId: ${elevenLabsVoiceId}`);
 
     return saved;
   }
 
   async remove(id: string): Promise<void> {
     const voice = await this.findOne(id);
+
+    // Delete from ElevenLabs if it's a real ElevenLabs voice_id
+    if (voice.voiceId && !voice.voiceId.startsWith("custom_voice_")) {
+      try {
+        await this.elevenLabsService.deleteVoice(voice.voiceId);
+        this.logger.log(`Deleted voice from ElevenLabs: ${voice.voiceId}`);
+      } catch (error: any) {
+        this.logger.warn(`Failed to delete voice from ElevenLabs: ${error.message}`);
+      }
+    }
 
     // Delete the file from disk
     const filepath = join(this.uploadDir, voice.fileName || voice.url.split("/").pop() || "");

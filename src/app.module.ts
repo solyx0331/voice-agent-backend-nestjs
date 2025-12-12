@@ -85,6 +85,9 @@ import { WebSocketModule } from "./modules/websocket/websocket.module";
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, "..", "uploads"),
       serveRoot: "/uploads",
+      serveStaticOptions: {
+        index: false, // Don't serve index files
+      },
     }),
     DashboardModule,
     AgentsModule,

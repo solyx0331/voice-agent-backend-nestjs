@@ -10,6 +10,9 @@ DB_NAME=voice_ai_agent
 # Retell AI Configuration
 RETELL_API_KEY=your_retell_api_key_here
 
+# ElevenLabs Configuration
+ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
+
 # Twilio Configuration
 TWILIO_ACCOUNT_SID=your_twilio_account_sid_here
 TWILIO_AUTH_TOKEN=your_twilio_auth_token_here

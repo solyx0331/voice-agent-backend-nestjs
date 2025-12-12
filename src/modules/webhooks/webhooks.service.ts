@@ -4,6 +4,8 @@ import { Model, Types } from "mongoose";
 import { VoiceAgent, VoiceAgentDocument } from "../../schemas/voice-agent.schema";
 import { Call, CallDocument } from "../../schemas/call.schema";
 import { RetellService } from "../../services/retell.service";
+import { ElevenLabsService } from "../../services/elevenlabs.service";
+import { StorageService } from "../../services/storage.service";
 import { LiveCallsGateway } from "../websocket/websocket.gateway";
 
 @Injectable()
@@ -16,6 +18,8 @@ export class WebhooksService {
     @InjectModel(Call.name)
     private callModel: Model<CallDocument>,
     private retellService: RetellService,
+    private elevenLabsService: ElevenLabsService,
+    private storageService: StorageService,
     @Inject(forwardRef(() => LiveCallsGateway))
     private liveCallsGateway: LiveCallsGateway
   ) {}
@@ -521,6 +525,92 @@ export class WebhooksService {
     }
 
     await this.callModel.findByIdAndUpdate(call._id, { $set: updates });
+  }
+
+  /**
+   * Handle Retell function_call event - when LLM generates a response that needs to be spoken
+   * This method generates TTS using ElevenLabs and returns a play_audio action to Retell
+   * @param body Retell webhook payload
+   * @returns Response with play_audio action or null if not applicable
+   */
+  async handleRetellFunctionCall(body: any): Promise<any | null> {
+    try {
+      this.logger.log("Handling Retell function_call event for TTS");
+
+      // Extract call information
+      const callData = body.call || body;
+      const retellCallId = callData.call_id;
+      const agentId = callData.agent_id;
+
+      if (!retellCallId || !agentId) {
+        this.logger.warn("Missing call_id or agent_id in function_call webhook");
+        return null;
+      }
+
+      // Find the agent by Retell agent ID
+      const agent = await this.agentModel.findOne({ retellAgentId: agentId });
+      if (!agent) {
+        this.logger.warn(`Agent not found for Retell agent_id: ${agentId}`);
+        return null;
+      }
+
+      // Check if agent has a custom ElevenLabs voice
+      if (!agent.voice || agent.voice.type !== "custom" || !agent.voice.customVoiceId) {
+        this.logger.log("Agent does not have a custom ElevenLabs voice, skipping TTS");
+        return null; // Let Retell handle TTS with default voice
+      }
+
+      // Extract the text to speak from the function_call
+      // Retell function_call structure may vary, check for common fields
+      const textToSpeak = 
+        body.response_text || 
+        body.text || 
+        body.function_call?.response_text ||
+        body.function_call?.text ||
+        callData.response_text ||
+        callData.text;
+
+      if (!textToSpeak) {
+        this.logger.warn("No text found in function_call webhook to convert to speech");
+        return null;
+      }
+
+      this.logger.log(`Generating TTS for text: ${textToSpeak.substring(0, 100)}...`);
+
+      // Generate TTS using ElevenLabs
+      const audioBuffer = await this.elevenLabsService.textToSpeech(
+        textToSpeak,
+        agent.voice.customVoiceId,
+        {
+          stability: agent.voice.temperature !== undefined ? agent.voice.temperature / 2 : 0.5, // Map temperature (0-2) to stability (0-1)
+          similarity_boost: 0.75,
+          style: 0.0,
+          use_speaker_boost: true,
+        }
+      );
+
+      // Upload audio to public URL
+      const audioUrl = await this.storageService.uploadAudio(
+        audioBuffer,
+        `tts_${retellCallId}_${Date.now()}.mp3`
+      );
+
+      this.logger.log(`TTS audio generated and uploaded: ${audioUrl}`);
+
+      // Return play_audio action to Retell
+      // Retell expects a response with action type "play_audio"
+      return {
+        action: "play_audio",
+        audio_url: audioUrl,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `Error handling Retell function_call for TTS: ${error.message}`,
+        error.stack
+      );
+      // Return null to let Retell handle TTS with default voice
+      return null;
+    }
   }
 }
 
