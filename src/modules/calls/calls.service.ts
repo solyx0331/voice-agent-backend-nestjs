@@ -204,12 +204,35 @@ export class CallsService {
       throw new NotFoundException(`Call with ID ${callId} not found`);
     }
 
-    if (!call.recording) {
+    // Check if recording exists
+    if (!call.recording && !call.recordingUrl) {
       throw new NotFoundException(`No recording found for call ${callId}`);
     }
 
-    // In a real implementation, this would return the actual recording URL
-    return { url: `/uploads/recordings/${callId}.mp3` };
+    // Return the actual recording URL from Retell if available
+    if (call.recordingUrl) {
+      // Validate that the URL is a valid HTTP/HTTPS URL
+      if (call.recordingUrl.startsWith("http://") || call.recordingUrl.startsWith("https://")) {
+        return { url: call.recordingUrl };
+      } else {
+        // If it's a relative path, make it absolute
+        throw new NotFoundException(
+          `Invalid recording URL format for call ${callId}. Expected HTTP/HTTPS URL.`
+        );
+      }
+    }
+
+    // Fallback: If recording flag is true but no URL, try to fetch from Retell
+    if (call.recording && call.retellCallId) {
+      // Note: In a real implementation, you might want to fetch the recording URL
+      // from Retell API using the retellCallId
+      // For now, return an error if we don't have the URL
+      throw new NotFoundException(
+        `Recording URL not available for call ${callId}. The recording may still be processing.`
+      );
+    }
+
+    throw new NotFoundException(`No recording URL found for call ${callId}`);
   }
 
   async exportCalls(format: "csv" | "json" = "csv") {
