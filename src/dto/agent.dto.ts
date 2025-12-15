@@ -232,6 +232,16 @@ export class RoutingLogicDto {
   @ValidateNested({ each: true })
   @Type(() => RoutingLeadCaptureFieldDto)
   leadCaptureFields: RoutingLeadCaptureFieldDto[];
+
+  @IsOptional()
+  @IsString()
+  completionResponse?: string; // Response after collecting information/lead data
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RoutingLogicDto)
+  routingLogics?: RoutingLogicDto[]; // Recursive nested routing logic
 }
 
 export class BaseLogicDto {
@@ -270,6 +280,10 @@ export class CreateAgentDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  systemPrompt?: string; // Custom system prompt for the agent
 
   @IsOptional()
   @IsEnum(["active", "inactive", "busy"])
@@ -358,6 +372,10 @@ export class UpdateAgentDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  systemPrompt?: string; // Custom system prompt for the agent
 
   @IsOptional()
   @IsEnum(["active", "inactive", "busy"])

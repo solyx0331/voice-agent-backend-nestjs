@@ -13,6 +13,9 @@ export class VoiceAgent {
   @Prop()
   description?: string;
 
+  @Prop()
+  systemPrompt?: string; // Custom system prompt for the agent
+
   @Prop({
     type: String,
     enum: ["active", "inactive", "busy"],
@@ -133,6 +136,8 @@ export class VoiceAgent {
         required: boolean;
         type: "text" | "email" | "phone" | "number";
       }>;
+      completionResponse?: string; // Response after collecting information/lead data
+      routingLogics?: Array<any>; // Recursive nested routing logic
     }>;
     // Legacy fields for backward compatibility
     primaryIntentPrompts?: string[];

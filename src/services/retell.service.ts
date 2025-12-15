@@ -186,6 +186,11 @@ export class RetellService {
   buildGeneralPrompt(createAgentDto: any): string {
     let prompt = "";
 
+    // Custom system prompt (if provided, use it as the base)
+    if (createAgentDto.systemPrompt) {
+      prompt += `${createAgentDto.systemPrompt}\n\n`;
+    }
+
     // Agent name and description
     if (createAgentDto.description) {
       prompt += `You are ${createAgentDto.name}, a voice AI assistant. ${createAgentDto.description}\n\n`;
@@ -202,32 +207,51 @@ export class RetellService {
       // New routingLogics structure (each block contains routing rules + information gathering + lead capture)
       if (createAgentDto.baseLogic.routingLogics && createAgentDto.baseLogic.routingLogics.length > 0) {
         prompt += "Routing Logic Blocks:\n";
-        createAgentDto.baseLogic.routingLogics.forEach((routing: any, index: number) => {
-          prompt += `\nRouting Block ${index + 1} (${routing.name || `Route ${index + 1}`}):\n`;
-          prompt += `- Condition: ${routing.condition}\n`;
-          prompt += `- Action: ${routing.action}\n`;
-          prompt += `- Response: ${routing.response}\n`;
-          
-          // Information gathering for this routing block
-          if (routing.informationGathering && routing.informationGathering.length > 0) {
-            prompt += `- Information Gathering Questions for this route:\n`;
-            routing.informationGathering.forEach((item: any) => {
-              prompt += `  * ${item.question}\n`;
-            });
-          }
-          
-          // Lead capture fields for this routing block
-          if (routing.leadCaptureFields && routing.leadCaptureFields.length > 0) {
-            prompt += `- Lead Capture Fields for this route:\n`;
-            routing.leadCaptureFields.forEach((field: any) => {
-              prompt += `  * ${field.name} (${field.type}): ${field.question}`;
-              if (field.required) {
-                prompt += " [Required]";
-              }
-              prompt += "\n";
-            });
-          }
-        });
+        
+        // Recursive function to build routing logic prompt
+        const buildRoutingPrompt = (routings: any[], depth: number = 0) => {
+          const indent = "  ".repeat(depth);
+          routings.forEach((routing: any, index: number) => {
+            const blockLabel = depth === 0 ? `Routing Block ${index + 1}` : `Nested Routing ${index + 1}`;
+            prompt += `\n${indent}${blockLabel} (${routing.name || `Route ${index + 1}`}):\n`;
+            prompt += `${indent}- Condition: ${routing.condition}\n`;
+            prompt += `${indent}- Action: ${routing.action}\n`;
+            prompt += `${indent}- Response: ${routing.response}\n`;
+            
+            // Information gathering for this routing block
+            if (routing.informationGathering && routing.informationGathering.length > 0) {
+              prompt += `${indent}- Information Gathering Questions for this route:\n`;
+              routing.informationGathering.forEach((item: any) => {
+                prompt += `${indent}  * ${item.question}\n`;
+              });
+            }
+            
+            // Lead capture fields for this routing block
+            if (routing.leadCaptureFields && routing.leadCaptureFields.length > 0) {
+              prompt += `${indent}- Lead Capture Fields for this route:\n`;
+              routing.leadCaptureFields.forEach((field: any) => {
+                prompt += `${indent}  * ${field.name} (${field.type}): ${field.question}`;
+                if (field.required) {
+                  prompt += " [Required]";
+                }
+                prompt += "\n";
+              });
+            }
+            
+            // Completion response after collecting information
+            if (routing.completionResponse) {
+              prompt += `${indent}- Completion Response (say this after collecting all information and lead data): ${routing.completionResponse}\n`;
+            }
+            
+            // Recursively process nested routing logic
+            if (routing.routingLogics && routing.routingLogics.length > 0) {
+              prompt += `${indent}- Nested Routing Logic:\n`;
+              buildRoutingPrompt(routing.routingLogics, depth + 1);
+            }
+          });
+        };
+        
+        buildRoutingPrompt(createAgentDto.baseLogic.routingLogics);
         prompt += "\n";
       }
 

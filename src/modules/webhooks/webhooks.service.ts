@@ -545,19 +545,47 @@ Call Summary:
     const fields: Array<{ label: string; fieldName: string; includeInEmail: boolean }> = [];
     const seenFieldNames = new Set<string>();
 
-    // Add lead capture fields from routing logics first (these have explicit field names)
-    agent.baseLogic?.routingLogics?.forEach((routing) => {
-      routing.leadCaptureFields?.forEach((field) => {
-        if (!seenFieldNames.has(field.name)) {
-          fields.push({
-            label: field.question || field.name,
-            fieldName: field.name,
-            includeInEmail: true,
-          });
-          seenFieldNames.add(field.name);
+    // Recursive function to process routing logics (including nested ones)
+    const processRoutingLogics = (routings: any[]) => {
+      routings.forEach((routing) => {
+        // Add lead capture fields from this routing logic (these have explicit field names)
+        routing.leadCaptureFields?.forEach((field: any) => {
+          if (!seenFieldNames.has(field.name)) {
+            fields.push({
+              label: field.question || field.name,
+              fieldName: field.name,
+              includeInEmail: true,
+            });
+            seenFieldNames.add(field.name);
+          }
+        });
+
+        // Add information gathering questions from this routing logic
+        // These don't have explicit field names, so we'll use the question text as a key
+        routing.informationGathering?.forEach((item: any, index: number) => {
+          // Try to infer field name from question (e.g., "What is your budget?" -> "budget")
+          const questionKey = item.question?.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 30) || `info_${index}`;
+          if (!seenFieldNames.has(questionKey)) {
+            fields.push({
+              label: item.question || `Information ${index + 1}`,
+              fieldName: questionKey,
+              includeInEmail: true,
+            });
+            seenFieldNames.add(questionKey);
+          }
+        });
+
+        // Recursively process nested routing logics
+        if (routing.routingLogics && routing.routingLogics.length > 0) {
+          processRoutingLogics(routing.routingLogics);
         }
       });
-    });
+    };
+
+    // Process all routing logics (including nested ones)
+    if (agent.baseLogic?.routingLogics) {
+      processRoutingLogics(agent.baseLogic.routingLogics);
+    }
 
     // Add universal lead capture fields if they exist (from leadCapture.fields)
     if (agent.leadCapture?.fields) {
@@ -572,26 +600,6 @@ Call Summary:
         }
       });
     }
-
-    // Add information gathering questions from routing logics
-    // These don't have explicit field names, so we'll use the question text as a key
-    // The LLM should extract answers and store them in extractedData
-    agent.baseLogic?.routingLogics?.forEach((routing) => {
-      routing.informationGathering?.forEach((item, index) => {
-        // Try to infer field name from question (e.g., "What is your budget?" -> "budget")
-        // For now, we'll use a generic approach and let the LLM extract the data
-        // The extracted data should match the question context
-        const questionKey = item.question?.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 30) || `info_${index}`;
-        if (!seenFieldNames.has(questionKey)) {
-          fields.push({
-            label: item.question || `Information ${index + 1}`,
-            fieldName: questionKey,
-            includeInEmail: true,
-          });
-          seenFieldNames.add(questionKey);
-        }
-      });
-    });
 
     // Always include call summary at the end
     fields.push({
