@@ -325,6 +325,8 @@ export class AgentsService {
                          mergedAgent.greetingScript || 
                          `Hello! I'm ${mergedAgent.name}. How can I help you today?`,
           general_prompt: this.retellService.buildGeneralPrompt(mergedAgent),
+          // Ensure smooth conversation flow with appropriate temperature
+          model_temperature: 0.7,
         };
         
         await this.retellService.updateLlm(agent.retellLlmId, llmUpdateParams);
@@ -395,23 +397,49 @@ export class AgentsService {
           if (voice.temperature !== undefined) {
             agentUpdateParams.voice_temperature = Math.max(0, Math.min(2, voice.temperature));
             this.logger.log(`Updating voice_temperature: ${agentUpdateParams.voice_temperature}`);
+          } else if (!mergedAgent.voice?.temperature) {
+            // Set default if not previously set
+            agentUpdateParams.voice_temperature = 0.7;
+            this.logger.log(`Setting default voice_temperature: ${agentUpdateParams.voice_temperature}`);
           }
           if (voice.speed !== undefined) {
             agentUpdateParams.voice_speed = Math.max(0.5, Math.min(2, voice.speed));
             this.logger.log(`Updating voice_speed: ${agentUpdateParams.voice_speed}`);
+          } else if (!mergedAgent.voice?.speed) {
+            // Set default if not previously set (slower pace for natural speech with breath control)
+            agentUpdateParams.voice_speed = 0.85;
+            this.logger.log(`Setting default voice_speed: ${agentUpdateParams.voice_speed}`);
           }
           if (voice.volume !== undefined) {
             agentUpdateParams.volume = Math.max(0, Math.min(2, voice.volume));
             this.logger.log(`Updating volume: ${agentUpdateParams.volume}`);
+          } else if (!mergedAgent.voice?.volume) {
+            // Set default if not previously set
+            agentUpdateParams.volume = 1.0;
+            this.logger.log(`Setting default volume: ${agentUpdateParams.volume}`);
           }
+        } else {
+          // No voice settings at all, set defaults to prevent speech issues
+          agentUpdateParams.voice_temperature = 0.7;
+          agentUpdateParams.voice_speed = 0.85;
+          agentUpdateParams.volume = 1.0;
+          this.logger.log(`Setting default voice settings: temperature=0.7, speed=0.85, volume=1.0`);
         }
         
-        // Agent behavior settings (if provided)
+        // Agent behavior settings (with defaults for smooth flow)
         if (mergedAgent.responsiveness !== undefined) {
           agentUpdateParams.responsiveness = Math.max(0, Math.min(1, mergedAgent.responsiveness));
+        } else {
+          // Default to 0.8 for smooth, responsive conversation
+          agentUpdateParams.responsiveness = 0.8;
+          this.logger.log(`Setting default responsiveness: ${agentUpdateParams.responsiveness}`);
         }
         if (mergedAgent.interruptionSensitivity !== undefined) {
           agentUpdateParams.interruption_sensitivity = Math.max(0, Math.min(1, mergedAgent.interruptionSensitivity));
+        } else {
+          // Default to 0.5 for balanced interruption handling
+          agentUpdateParams.interruption_sensitivity = 0.5;
+          this.logger.log(`Setting default interruption_sensitivity: ${agentUpdateParams.interruption_sensitivity}`);
         }
 
         // Call management settings (if provided)
