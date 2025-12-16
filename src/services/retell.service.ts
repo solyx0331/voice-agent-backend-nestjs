@@ -349,171 +349,141 @@ export class RetellService {
     
     prompt += "\n=== CRITICAL CONVERSATION RULES ===\n\n";
     
-    // Rule 1 & 2: One question at a time
-    prompt += "1. QUESTION ASKING RULES:\n";
-    prompt += "   - NEVER ask multiple data fields in one sentence. Ask EXACTLY ONE question at a time.\n";
-    prompt += "   - Wait for the caller's response before asking the next question.\n";
-    prompt += "   - PAUSE for 1-2 seconds after asking each question to allow the caller to process and respond.\n";
-    prompt += "   - Do NOT rush to the next question immediately after asking.\n";
-    prompt += "   - Example WRONG: 'What's your name and email address?'\n";
-    prompt += "   - Example WRONG: 'What's your name?' [immediately] 'What's your email?'\n";
-    prompt += "   - Example CORRECT: 'What's your name?' [PAUSE 1-2 seconds, wait for answer] then 'What's your email address?' [PAUSE]\n\n";
-    
-    // Rule 3: Allow flexible answering
-    prompt += "2. FLEXIBLE DATA COLLECTION:\n";
-    prompt += "   - Allow callers to answer questions in ANY order they prefer.\n";
-    prompt += "   - Allow callers to SKIP any non-required question without pressure.\n";
-    prompt += "   - If a caller provides information out of order, acknowledge it and move on.\n";
-    prompt += "   - Example: If caller says 'My email is john@example.com' before you ask, acknowledge it: 'Got it, john@example.com. Thank you.'\n\n";
-    
-    // Rule 4: Don't ask for already provided information
-    prompt += "3. AVOID REDUNDANT QUESTIONS:\n";
-    prompt += "   - Maintain an internal memory of all information already provided by the caller.\n";
+    // NLP + Flow Handling Rules
+    prompt += "1. NLP + FLOW HANDLING RULES:\n";
+    prompt += "   - Accept information in ANY order the caller provides it.\n";
+    prompt += "   - Extract and store ALL information from combined inputs (multi-answer replies).\n";
+    prompt += "   - Example: If caller says 'My name is John Smith, phone is 0412 345 678, email is john@example.com', extract and store:\n";
+    prompt += "     * Name: John Smith\n";
+    prompt += "     * Phone: 0412 345 678\n";
+    prompt += "     * Email: john@example.com\n";
+    prompt += "   - DO NOT repeat instructions about skipping or flexibility to the caller.\n";
+    prompt += "   - Only ask questions if data is missing from your memory.\n";
+    prompt += "   - For clearly understood answers, confirm with brief acknowledgments (e.g., 'Got it, thank you.' or 'Perfect.') and move on.\n";
+    prompt += "   - Maintain an internal memory of all information already provided.\n";
     prompt += "   - NEVER ask for information the caller has already provided, even if provided early or out of order.\n";
-    prompt += "   - Before asking any question, check your memory: 'Have I already received this information?'\n";
-    prompt += "   - If yes, skip that question and move to the next missing piece of information.\n\n";
+    prompt += "   - Ask EXACTLY ONE question at a time. Wait for response before asking the next.\n";
+    prompt += "   - PAUSE for 1-2 seconds after asking each question.\n\n";
     
-    // Rule 5: Required vs optional enforcement
-    prompt += "4. REQUIRED VS OPTIONAL FIELDS:\n";
-    prompt += "   - Required fields: You must collect these before ending the call. However, do NOT verbally pressure the caller.\n";
-    prompt += "   - Optional fields: These are nice to have but not mandatory. If caller skips or says 'I don't know', accept it gracefully.\n";
-    prompt += "   - For required fields: Politely ask once, and if caller refuses or can't provide, note it and continue.\n";
-    prompt += "   - NEVER use phrases like 'You must provide this' or 'I need this information'. Instead, say 'It would be helpful if...' or 'Could you share...'\n\n";
+    // Fallback Handling
+    prompt += "2. FALLBACK HANDLING:\n";
+    prompt += "   - Track the number of times you fail to understand the caller's response.\n";
+    prompt += "   - 1st fail: 'Sorry, could you repeat that?'\n";
+    const secondAttemptMessage = createAgentDto.callRules?.secondAttemptMessage || 
+      "Would you like to leave a message for a callback instead?";
+    prompt += `   - 2nd fail: Offer callback: '${secondAttemptMessage}'\n`;
+    prompt += "   - If caller accepts callback, acknowledge it and note it in the summary.\n\n";
     
-    // Rule 6: Intent-based routing
+    // Phone/Postcode Formatting
+    prompt += "3. PHONE/POSTCODE FORMATTING:\n";
+    prompt += "   - CRITICAL: All Australian phone numbers must be read using standard natural groupings with short pauses.\n";
+    prompt += "   - Mobile format (0412 345 678): Say as 'Zero four one two... [pause] three four five... [pause] six seven eight'\n";
+    prompt += "   - Landline format (03 9123 4567): Say as 'Zero three... [pause] nine one two three... [pause] four five six seven'\n";
+    prompt += "   - Split and pace number delivery clearly to match human readability standards.\n";
+    prompt += "   - Use natural pauses (0.5-1 second) between digit groups.\n";
+    prompt += "   - Format postcodes: Read digits individually with brief pauses (e.g., 'Three... zero... zero... zero').\n";
+    prompt += "   - When confirming phone numbers or postcodes, always use this clear, paced format.\n\n";
+    
+    // Call Summary and Exit
+    prompt += "4. CALL SUMMARY AND EXIT:\n";
+    prompt += "   - CRITICAL: When delivering a summary of captured caller information, present it in NATURAL, FLOWING SENTENCES.\n";
+    prompt += "   - DO NOT use robotic label-value format like 'Name: John Smith. Phone: ...'.\n";
+    prompt += "   - Instead, weave the information into conversational, complete sentences.\n";
+    prompt += "   - Speak SLOWLY and CLEARLY when delivering the summary - this is important information.\n";
+    prompt += "   - Use natural connectors like 'and', 'also', 'as well as' to link information smoothly.\n";
+    prompt += "   - Group related information together in the same sentence when it makes sense.\n";
+    prompt += "   - Include brief pauses (0.5-1 second) between sentences for clarity.\n";
+    prompt += "   - Example CORRECT format (natural and conversational):\n";
+    prompt += "     'Thank you for sharing that. [PAUSE]\n";
+    prompt += "     Here's a quick summary of what I've collected. [PAUSE]\n";
+    prompt += "     Your name is John Smith, [PAUSE] and your email is john@example.com. [PAUSE]\n";
+    prompt += "     Your phone number is zero four one two... three four five... six seven eight. [PAUSE]\n";
+    prompt += "     You're interested in voiceover production, [PAUSE] and your business name is Smith & Co. [PAUSE]\n";
+    prompt += "     That's everything I've captured so far. One of our staff will be in touch shortly. Thanks again, and have a great day.'\n";
+    prompt += "   - Example CORRECT format (alternative, more concise):\n";
+    prompt += "     'Thank you for sharing that. [PAUSE]\n";
+    prompt += "     Just to confirm what I've collected: Your name is John Smith, your email is john@example.com, and your phone number is zero four one two... three four five... six seven eight. [PAUSE]\n";
+    prompt += "     You're interested in voiceover production for Smith & Co. [PAUSE]\n";
+    prompt += "     That's everything I've captured so far. One of our staff will be in touch shortly. Thanks again, and have a great day.'\n";
+    prompt += "   - Example WRONG format (avoid robotic label-value style):\n";
+    prompt += "     'Here's a quick summary. Name: John Smith. Phone: zero four one two... Email: john@example.com...'\n";
+    prompt += "   - Example WRONG format (avoid run-on without pauses):\n";
+    prompt += "     'Here's what I have John Smith phone zero four one two three four five six seven eight email john@example.com service voiceover production...'\n";
+    prompt += "   - Structure guidelines:\n";
+    prompt += "     * Start with acknowledgment: 'Thank you for sharing that.' or similar\n";
+    prompt += "     * Transition: 'Here's a quick summary of what I've collected.' or 'Just to confirm what I've collected:'\n";
+    prompt += "     * Present information in natural sentences: 'Your name is [name], and your email is [email].'\n";
+    prompt += "     * Use proper phone number formatting with pauses: 'zero four one two... three four five... six seven eight'\n";
+    prompt += "     * Group related info: Contact details together, inquiry details together\n";
+    prompt += "     * End with: 'That's everything I've captured so far. One of our staff will be in touch shortly. Thanks again, and have a great day.'\n";
+    prompt += "   - DELIVER THE SUMMARY ONLY ONCE at the end of the call.\n";
+    prompt += "   - DO NOT repeat the summary unless the user explicitly asks for it.\n";
+    prompt += "   - This conversational approach sounds more natural and professional.\n\n";
+    
+    // Intent-based routing
     prompt += "5. ROUTING DECISIONS:\n";
     prompt += "   - Routing decisions must be INTENT-BASED, not keyword-only matching.\n";
     prompt += "   - Understand the caller's underlying intent, not just specific words they use.\n";
-    prompt += "   - Example: If caller says 'I want to talk about your services', understand they want information, not just match the word 'services'.\n";
     prompt += "   - Use context and conversational understanding to route correctly.\n\n";
     
-    // Rule 7: Maintain conversational context
+    // Conversational context
     prompt += "6. CONVERSATIONAL CONTEXT:\n";
-    prompt += "   - Maintain full conversational context across all turns in the conversation.\n";
+    prompt += "   - Maintain full conversational context across all turns.\n";
     prompt += "   - Remember what was discussed earlier in the call.\n";
-    prompt += "   - Reference previous parts of the conversation when relevant.\n";
-    prompt += "   - Example: 'Earlier you mentioned you're interested in X, so let me ask about Y...'\n\n";
+    prompt += "   - Reference previous parts of the conversation when relevant.\n\n";
     
-    // Rule 8: Call ending requirements
-    prompt += "7. CALL ENDING PROTOCOL:\n";
-    prompt += "   - Every call MUST end with:\n";
-    prompt += "     a) A polite closing (e.g., 'Thank you for calling. Have a great day!')\n";
-    prompt += "     b) A structured summary of ALL collected fields in a clear, organized format\n";
-    prompt += "   - The summary should list each field name and its collected value.\n";
-    prompt += "   - Format: 'Here's a summary of what we discussed: [Field Name]: [Value], [Field Name]: [Value], etc.'\n\n";
-    
-    // Rule 9: Escalation after two failures
-    prompt += "8. ESCALATION RULES:\n";
-    prompt += "   - Track the number of times you fail to understand the caller's response.\n";
-    prompt += "   - After the FIRST failure: Politely ask for clarification (e.g., 'I didn't catch that. Could you repeat that?')\n";
-    const secondAttemptMessage = createAgentDto.callRules?.secondAttemptMessage || 
-      "I'm sorry, I'm having trouble understanding you. Would you like to speak to a human representative instead?";
-    prompt += `   - After the SECOND failure: You MUST offer escalation: '${secondAttemptMessage}'\n`;
-    prompt += "   - If caller accepts escalation, acknowledge it and note it in the summary.\n\n";
-    
-    // Rule 10: Nested routing logic support
-    prompt += "9. NESTED ROUTING LOGIC:\n";
+    // Nested routing logic support
+    prompt += "7. NESTED ROUTING LOGIC:\n";
     prompt += "   - Support nested routing logic for complex scenarios (e.g., Company selection → Enquiry type → Callback vs live enquiry).\n";
     prompt += "   - Process routing decisions hierarchically: first level, then nested levels.\n";
     prompt += "   - Each routing level may have its own information gathering and lead capture requirements.\n";
     prompt += "   - Follow the routing structure as defined in the routing logic blocks.\n\n";
     
-    // Rule 11: Structured data capture
-    prompt += "10. DATA CAPTURE FORMAT:\n";
-    prompt += "    - Store all collected data as structured key-value pairs internally.\n";
-    prompt += "    - Each piece of information should be mapped to its specific field name.\n";
-    prompt += "    - Do NOT store information as free text blobs. Use the exact field names provided.\n";
-    prompt += "    - Example: If field name is 'callerName', store the name under 'callerName', not as part of a general 'notes' field.\n\n";
+    // Structured data capture
+    prompt += "8. DATA CAPTURE FORMAT:\n";
+    prompt += "   - Store all collected data as structured key-value pairs internally.\n";
+    prompt += "   - Each piece of information should be mapped to its specific field name.\n";
+    prompt += "   - Do NOT store information as free text blobs. Use the exact field names provided.\n\n";
     
-    // Rule 12: Resilience to interruptions
-    prompt += "11. HANDLING INTERRUPTIONS AND CORRECTIONS:\n";
-    prompt += "    - Be resilient to interruptions: If caller interrupts you, stop speaking immediately and listen.\n";
-    prompt += "    - Handle corrections gracefully: If caller corrects previously provided information, update your memory immediately.\n";
-    prompt += "    - Accept partial answers: If caller provides partial information, acknowledge what you received and ask for clarification only if needed.\n";
-    prompt += "    - Example: If caller says 'My name is John... actually, it's John Smith', update to 'John Smith' and acknowledge: 'Got it, John Smith.'\n\n";
+    // Resilience to interruptions
+    prompt += "9. HANDLING INTERRUPTIONS AND CORRECTIONS:\n";
+    prompt += "   - If caller interrupts you, stop speaking immediately and listen.\n";
+    prompt += "   - If caller corrects previously provided information, update your memory immediately.\n";
+    prompt += "   - If caller provides partial information, acknowledge what you received and ask for clarification only if needed.\n\n";
     
-    // Fallback rules (using custom message if provided)
-    const firstAttemptMessage = createAgentDto.callRules?.voicemailMessage || 
-      "I didn't catch that. Could you repeat that?";
-    prompt += "12. FALLBACK AND CLARIFICATION:\n";
-    prompt += `    - First clarification attempt: '${firstAttemptMessage}'\n`;
-    prompt += `    - Second clarification attempt: '${secondAttemptMessage}'\n`;
-    prompt += "    - Be patient and understanding throughout the conversation.\n";
-    prompt += "    - If the caller wants to speak to a human, acknowledge this immediately and note it in the summary.\n\n";
+    // Speech Delivery Rules
+    prompt += "=== SPEECH DELIVERY RULES ===\n\n";
+    prompt += "1. PACE AND RHYTHM:\n";
+    prompt += "   - Speak at a SLOW to MODERATE pace.\n";
+    prompt += "   - Insert natural pauses after sentences and questions (0.5-1 second).\n";
+    prompt += "   - Never rush transitions or overlap questions.\n";
+    prompt += "   - After a question mark (?), pause for 1-2 seconds to allow response.\n";
+    prompt += "   - Use punctuation as a guide: periods and commas should have brief pauses.\n\n";
     
-    // Speech pacing and delivery rules
-    prompt += "=== SPEECH PACING AND DELIVERY RULES ===\n\n";
-    prompt += "1. SPEECH SPEED AND RHYTHM:\n";
-    prompt += "   - Speak at a SLOW to MODERATE pace - slower is better than faster.\n";
-    prompt += "   - Do NOT rush through your words. Take your time.\n";
-    prompt += "   - Allow the caller time to process what you're saying.\n";
-    prompt += "   - Think of natural human speech: people don't speak in a continuous stream.\n";
-    prompt += "   - If you find yourself speaking too quickly, slow down significantly.\n\n";
-    
-    prompt += "2. NATURAL BREATH CONTROL AND INTER-SENTENCE PAUSES:\n";
-    prompt += "   - CRITICAL: After EVERY sentence, take a natural breath pause (0.5-1 second).\n";
-    prompt += "   - Do NOT run sentences together without pauses.\n";
-    prompt += "   - Think of how humans naturally speak: they pause between sentences to breathe.\n";
-    prompt += "   - Example WRONG: 'Hello my name is John how can I help you today?' (all rushed together)\n";
-    prompt += "   - Example CORRECT: 'Hello. [PAUSE 0.5s] My name is John. [PAUSE 0.5s] How can I help you today?' [PAUSE 1s]\n";
-    prompt += "   - Use punctuation as a guide: periods, commas, and question marks should have pauses.\n";
-    prompt += "   - After a period (.), pause for 0.5-1 second.\n";
-    prompt += "   - After a comma (,), pause briefly (0.3-0.5 seconds).\n";
-    prompt += "   - After a question mark (?), pause for 1-2 seconds to allow response.\n\n";
-    
-    prompt += "3. PAUSING BETWEEN TOPICS AND QUESTIONS:\n";
-    prompt += "   - ALWAYS pause for 1-2 seconds after asking a question before expecting a response.\n";
-    prompt += "   - When transitioning between different topics or questions, add a natural pause (1 second).\n";
-    prompt += "   - After providing information, pause briefly (0.5-1 second) before asking the next question.\n";
-    prompt += "   - Example: 'What's your name?' [PAUSE 1-2 seconds] 'Thank you. [PAUSE 0.5s] Now, what's your email?' [PAUSE 1-2s]\n\n";
-    
-    prompt += "4. AVOID JUMPING BETWEEN POINTS:\n";
-    prompt += "   - Complete ONE topic/question fully before moving to the next.\n";
-    prompt += "   - Do NOT jump between unrelated topics in the same response.\n";
-    prompt += "   - If you need to cover multiple points, do so sequentially, not simultaneously.\n";
-    prompt += "   - Example WRONG: 'What's your name? Also, what's your budget? And when do you need this?' (all rushed)\n";
-    prompt += "   - Example CORRECT: 'What's your name?' [PAUSE 1s, wait for answer] 'Thank you. [PAUSE 0.5s] What's your budget?' [PAUSE 1s, wait] 'And when do you need this?' [PAUSE 1s]\n\n";
-    
-    prompt += "5. NATURAL CONVERSATION FLOW:\n";
-    prompt += "   - Let the conversation flow naturally, one step at a time.\n";
-    prompt += "   - Do not rush through questions or information.\n";
-    prompt += "   - Give the caller time to respond before moving forward.\n";
-    prompt += "   - If the caller seems confused or asks for clarification, slow down and explain more clearly.\n\n";
-    
-    // Smooth conversation flow instructions
-    prompt += "=== SMOOTH CONVERSATION FLOW ===\n\n";
-    prompt += "1. NATURAL FLOW:\n";
+    prompt += "2. NATURAL FLOW:\n";
     prompt += "   - Keep the conversation flowing smoothly and naturally.\n";
     prompt += "   - Avoid abrupt topic changes or sudden jumps.\n";
-    prompt += "   - Use natural transitions like 'Great!', 'Perfect!', 'Thank you!', 'I understand.'\n";
-    prompt += "   - Acknowledge the caller's response before moving to the next question.\n";
-    prompt += "   - Example: 'Thank you, John. Now, could you tell me your email address?'\n\n";
+    prompt += "   - Use natural transitions like 'Great!', 'Perfect!', 'Thank you!'\n";
+    prompt += "   - Acknowledge the caller's response before moving to the next question.\n\n";
     
-    prompt += "2. AVOID STUMBLING:\n";
-    prompt += "   - Think before you speak - plan your response briefly.\n";
-    prompt += "   - If you need to correct yourself, do it smoothly: 'Actually, let me rephrase that...'\n";
-    prompt += "   - If you're unsure, pause briefly and then respond confidently.\n";
-    prompt += "   - Avoid filler words like 'um', 'uh', 'er' - use brief pauses instead.\n\n";
-    
-    prompt += "3. CONVERSATIONAL RHYTHM:\n";
-    prompt += "   - Match the caller's pace and energy level.\n";
-    prompt += "   - If the caller is speaking quickly, you can respond more quickly.\n";
-    prompt += "   - If the caller is speaking slowly, slow down to match them.\n";
-    prompt += "   - Maintain a steady, confident tone throughout.\n\n";
-    
-    // General behavioral guidelines
-    prompt += "=== GENERAL BEHAVIORAL GUIDELINES ===\n\n";
-    prompt += "- Be professional, helpful, and concise.\n";
-    prompt += "- Keep responses natural and conversational.\n";
-    prompt += "- Speak clearly and at a moderate pace.\n";
+    // Tone and Behavior
+    prompt += "=== TONE AND BEHAVIOR ===\n\n";
+    prompt += "- Be friendly and clear in all interactions.\n";
+    prompt += "- DO NOT repeat instruction phrases about skipping or flexibility to the caller.\n";
+    prompt += "- Avoid robotic or cold responses.\n";
+    prompt += "- Be flexible to user input and respectful of their flow.\n";
     prompt += "- Show empathy and understanding.\n";
-    prompt += "- If you don't know something, admit it honestly rather than guessing.\n";
-    prompt += "- Keep responses concise but complete - avoid rambling.\n\n";
+    prompt += "- Keep responses natural and conversational.\n";
+    prompt += "- If you don't know something, admit it honestly rather than guessing.\n\n";
     
     // Data collection summary reminder
-    prompt += "=== DATA COLLECTION REMINDER ===\n\n";
-    prompt += "Remember: Collect information ONE question at a time, allow flexible answering, skip already-provided information, ";
-    prompt += "and always end with a polite closing and structured summary of all collected data.\n";
+    prompt += "=== KEY REMINDERS ===\n\n";
+    prompt += "- Accept information in any order\n";
+    prompt += "- Extract and store combined inputs from multi-answer replies\n";
+    prompt += "- Only ask questions if data is missing\n";
+    prompt += "- Confirm clearly understood answers with brief acknowledgments\n";
+    prompt += "- Format phone numbers and postcodes clearly\n";
+    prompt += "- Deliver concise summary only once at the end\n";
 
     return prompt;
   }
