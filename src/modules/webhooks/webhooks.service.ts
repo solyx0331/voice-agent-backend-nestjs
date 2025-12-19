@@ -281,6 +281,40 @@ export class WebhooksService {
   private async handleCallEnded(call: CallDocument, callData: any): Promise<void> {
     this.logger.log(`Call ended: ${call._id}`);
 
+    // Some Retell webhook variants don't include full timing / recording / transcript data.
+    // If critical timing fields are missing, try to fetch the complete call object from Retell.
+    if (
+      !callData.start_timestamp &&
+      !callData.end_timestamp &&
+      !callData.duration_ms
+    ) {
+      try {
+        const fullCallData = await this.retellService.getCallDetails(
+          call.retellCallId || callData.call_id
+        );
+
+        if (fullCallData) {
+          this.logger.log(
+            `Enriched call_ended payload with full call data from Retell for call ${call._id}`
+          );
+          // Merge, giving precedence to webhook fields but filling gaps from fullCallData
+          callData = {
+            ...fullCallData,
+            ...callData,
+          };
+        } else {
+          this.logger.warn(
+            `Could not enrich call_ended payload for call ${call._id} – using webhook data only`
+          );
+        }
+      } catch (error: any) {
+        this.logger.error(
+          `Error enriching call_ended data from Retell for call ${call._id}: ${error.message}`,
+          error.stack
+        );
+      }
+    }
+
     // Calculate duration from timestamps (milliseconds)
     let duration = "0:00";
     if (callData.start_timestamp && callData.end_timestamp) {

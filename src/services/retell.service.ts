@@ -193,6 +193,13 @@ export class RetellService {
   buildGeneralPrompt(createAgentDto: any): string {
     let prompt = "";
 
+    // IMPORTANT: Configuration Flexibility Notice
+    prompt += "=== CONFIGURATION FLEXIBILITY ===\n";
+    prompt += "All routing logic, company names, products, fields, and business flows are DYNAMIC and CONFIGURABLE.\n";
+    prompt += "DO NOT treat any specific company, product, or routing structure as fixed or hardcoded.\n";
+    prompt += "All company-specific flows, product names, and data fields should be determined from the configured routing logic provided below, not from static assumptions.\n";
+    prompt += "Any test/mock data (such as example company names or products) should be treated as examples only and can be changed through the admin interface.\n\n";
+
     // Custom system prompt (if provided, use it as the base)
     if (createAgentDto.systemPrompt) {
       prompt += `${createAgentDto.systemPrompt}\n\n`;
@@ -352,11 +359,13 @@ export class RetellService {
     // NLP + Flow Handling Rules
     prompt += "1. NLP + FLOW HANDLING RULES:\n";
     prompt += "   - Accept information in ANY order the caller provides it.\n";
-    prompt += "   - Extract and store ALL information from combined inputs (multi-answer replies).\n";
+    prompt += "   - STRENGTHEN NLP parsing to extract multiple data points from out-of-sequence or combined replies.\n";
     prompt += "   - Example: If caller says 'My name is John Smith, phone is 0412 345 678, email is john@example.com', extract and store:\n";
     prompt += "     * Name: John Smith\n";
     prompt += "     * Phone: 0412 345 678\n";
     prompt += "     * Email: john@example.com\n";
+    prompt += "   - Ensure CORRECT field association - map each piece of information to the right field.\n";
+    prompt += "   - Follow up ONLY on unanswered required fields, avoiding redundant requests.\n";
     prompt += "   - DO NOT repeat instructions about skipping or flexibility to the caller.\n";
     prompt += "   - Only ask questions if data is missing from your memory.\n";
     prompt += "   - For clearly understood answers, confirm with brief acknowledgments (e.g., 'Got it, thank you.' or 'Perfect.') and move on.\n";
@@ -365,60 +374,102 @@ export class RetellService {
     prompt += "   - Ask EXACTLY ONE question at a time. Wait for response before asking the next.\n";
     prompt += "   - PAUSE for 1-2 seconds after asking each question.\n\n";
     
+    // Intent Matching Flexibility
+    prompt += "1a. INTENT MATCHING (FLEXIBILITY):\n";
+    prompt += "   - Callback Intent: Expand matching to include variants:\n";
+    prompt += "     * 'Have someone call me back'\n";
+    prompt += "     * 'Can you call me later?'\n";
+    prompt += "     * 'Call me when you can'\n";
+    prompt += "     * 'I'd like a callback'\n";
+    prompt += "     * 'Please call me back'\n";
+    prompt += "   - Quotation/Pricing Intent: Expand synonyms to capture variations:\n";
+    prompt += "     * 'I need a quote'\n";
+    prompt += "     * 'Can I get pricing?'\n";
+    prompt += "     * 'Please send a quotation'\n";
+    prompt += "     * 'I want to check cost'\n";
+    prompt += "     * 'I'm looking for a price'\n";
+    prompt += "     * 'What's the price?'\n";
+    prompt += "     * 'How much does it cost?'\n";
+    prompt += "   - Use intent-based understanding, not just keyword matching.\n";
+    prompt += "   - Understand the caller's underlying need, not just specific words.\n";
+    prompt += "   - IMPORTANT: All routing logic, company names, products, and field configurations are DYNAMIC and CONFIGURABLE.\n";
+    prompt += "   - DO NOT treat any specific company, product, or routing structure as fixed or hardcoded.\n";
+    prompt += "   - All company-specific flows, product names, and data fields should be determined from the configured routing logic, not from static assumptions.\n\n";
+    
     // Fallback Handling
     prompt += "2. FALLBACK HANDLING:\n";
-    prompt += "   - Track the number of times you fail to understand the caller's response.\n";
+    prompt += "   - Track the number of times you fail to understand the caller's response OR misroute (e.g., unknown company name).\n";
     prompt += "   - 1st fail: 'Sorry, could you repeat that?'\n";
+    prompt += "   - 2nd fail (after two unclear responses or misroutes): Offer callback: 'I'm having trouble understanding. Would you like to leave your contact details for a callback instead?'\n";
     const secondAttemptMessage = createAgentDto.callRules?.secondAttemptMessage || 
-      "Would you like to leave a message for a callback instead?";
-    prompt += `   - 2nd fail: Offer callback: '${secondAttemptMessage}'\n`;
+      "I'm having trouble understanding. Would you like to leave your contact details for a callback instead?";
+    prompt += `   - Alternative 2nd fail message (if configured): '${secondAttemptMessage}'\n`;
+    prompt += "   - Escalate to human fallback ONLY after failure to match intent confidently, NOT on first error.\n";
     prompt += "   - If caller accepts callback, acknowledge it and note it in the summary.\n\n";
     
-    // Phone/Postcode Formatting
-    prompt += "3. PHONE/POSTCODE FORMATTING:\n";
-    prompt += "   - CRITICAL: All Australian phone numbers must be read using standard natural groupings with short pauses.\n";
-    prompt += "   - Mobile format (0412 345 678): Say as 'Zero four one two... [pause] three four five... [pause] six seven eight'\n";
-    prompt += "   - Landline format (03 9123 4567): Say as 'Zero three... [pause] nine one two three... [pause] four five six seven'\n";
-    prompt += "   - Split and pace number delivery clearly to match human readability standards.\n";
-    prompt += "   - Use natural pauses (0.5-1 second) between digit groups.\n";
-    prompt += "   - Format postcodes: Read digits individually with brief pauses (e.g., 'Three... zero... zero... zero').\n";
-    prompt += "   - When confirming phone numbers or postcodes, always use this clear, paced format.\n\n";
+    // Email & Phone Accuracy
+    prompt += "3. EMAIL & PHONE ACCURACY:\n";
+    prompt += "   - Email Address Handling:\n";
+    prompt += "     * Enable enhanced phonetic tolerance when capturing email addresses.\n";
+    prompt += "     * If confidence is low, ask for spelling: 'Could you please spell that for me?'\n";
+    prompt += "     * Confirm email addresses clearly: 'Just to confirm, was that john@example.com?'\n";
+    prompt += "   - Australian Mobile Number Recognition:\n";
+    prompt += "     * Strengthen recognition for Australian mobile format: 0400 670 219\n";
+    prompt += "     * Capture format: 0400 670 219\n";
+    prompt += "     * Readback format: 'Zero four zero zero... [pause] six seven zero... [pause] two one nine'\n";
+    prompt += "     * ALWAYS require confirmation: 'Just to confirm, was that 0400 670 219?'\n";
+    prompt += "   - Phone Number Formatting:\n";
+    prompt += "     * CRITICAL: All Australian phone numbers must be read using standard natural groupings with short pauses.\n";
+    prompt += "     * Mobile format (0412 345 678): Say as 'Zero four one two... [pause] three four five... [pause] six seven eight'\n";
+    prompt += "     * Landline format (03 9123 4567): Say as 'Zero three... [pause] nine one two three... [pause] four five six seven'\n";
+    prompt += "     * Split and pace number delivery clearly to match human readability standards.\n";
+    prompt += "     * Use natural pauses (0.5-1 second) between digit groups.\n";
+    prompt += "   - Postcode Formatting:\n";
+    prompt += "     * Format postcodes: Read digits individually with brief pauses (e.g., 'Three... zero... zero... zero').\n";
+    prompt += "     * When confirming postcodes, always use this clear, paced format.\n\n";
     
     // Call Summary and Exit
     prompt += "4. CALL SUMMARY AND EXIT:\n";
-    prompt += "   - CRITICAL: When delivering a summary of captured caller information, present it in NATURAL, FLOWING SENTENCES.\n";
-    prompt += "   - DO NOT use robotic label-value format like 'Name: John Smith. Phone: ...'.\n";
-    prompt += "   - Instead, weave the information into conversational, complete sentences.\n";
+    prompt += "   - CRITICAL: Summary Accuracy - Only summarize CONFIRMED or CLEARLY PARSED information.\n";
+    prompt += "   - DO NOT hallucinate or paraphrase caller inputs in final summary.\n";
+    prompt += "   - Only include information you are confident about.\n";
+    prompt += "   - Make summary OPTIONAL by asking: 'Would you like me to read back the summary of the information I've gathered, or should we end the call here?'\n";
+    prompt += "   - Only read summary if user confirms (says 'yes', 'sure', 'go ahead', etc.).\n";
+    prompt += "   - If no response after 2 seconds, assume opt-out and proceed to goodbye.\n";
+    prompt += "   - When delivering summary, CLEARLY DISTINGUISH each field with a pause or audible separation.\n";
+    prompt += "   - Use consistent KEY → VALUE phrasing with a brief pause (0.5-1 second) between fields.\n";
+    prompt += "   - AVOID ambiguous phrasing that merges multiple values or sounds like a sentence.\n";
+    prompt += "   - Each field should feel like its own paragraph when spoken - use clear sectioning.\n";
+    prompt += "   - Example CORRECT format (clear and well-separated):\n";
+    prompt += "     'Would you like me to read back the summary of the information I've gathered, or should we end the call here?'\n";
+    prompt += "     [If user confirms:]\n";
+    prompt += "     'Here's what I have:\n";
+    prompt += "     Full Name: John Smith. [PAUSE 0.5-1s]\n";
+    prompt += "     Phone Number: Zero four one two... [pause] three four five... [pause] six seven eight. [PAUSE 0.5-1s]\n";
+    prompt += "     Email Address: john [at] example [dot] com. [PAUSE 0.5-1s]\n";
+    prompt += "     Product: Vinyl Stickers. [PAUSE 0.5-1s]\n";
+    prompt += "     Quantity: Five hundred. [PAUSE 0.5-1s]\n";
+    prompt += "     Postcode: Three zero zero zero.'\n";
+    prompt += "   - Example WRONG format (avoid - runs together, hard to distinguish):\n";
+    prompt += "     'John Smith zero four one two three four five six seven eight john@example.com'\n";
+    prompt += "   - DO NOT say '[pause]' or '[PAUSE]' during summaries - these are literal tokens that should NOT be spoken.\n";
+    prompt += "   - Use natural pauses (silence) between items, but DO NOT verbalize the word 'pause'.\n";
+    prompt += "   - For email addresses, spell them clearly: 'john [at] example [dot] com' instead of rushing through 'john@example.com'.\n";
+    prompt += "   - For phone numbers, use the proper paced format: 'Zero four one two... [pause] three four five... [pause] six seven eight'.\n";
     prompt += "   - Speak SLOWLY and CLEARLY when delivering the summary - this is important information.\n";
-    prompt += "   - Use natural connectors like 'and', 'also', 'as well as' to link information smoothly.\n";
-    prompt += "   - Group related information together in the same sentence when it makes sense.\n";
-    prompt += "   - Include brief pauses (0.5-1 second) between sentences for clarity.\n";
-    prompt += "   - Example CORRECT format (natural and conversational):\n";
-    prompt += "     'Thank you for sharing that. [PAUSE]\n";
-    prompt += "     Here's a quick summary of what I've collected. [PAUSE]\n";
-    prompt += "     Your name is John Smith, [PAUSE] and your email is john@example.com. [PAUSE]\n";
-    prompt += "     Your phone number is zero four one two... three four five... six seven eight. [PAUSE]\n";
-    prompt += "     You're interested in voiceover production, [PAUSE] and your business name is Smith & Co. [PAUSE]\n";
-    prompt += "     That's everything I've captured so far. One of our staff will be in touch shortly. Thanks again, and have a great day.'\n";
-    prompt += "   - Example CORRECT format (alternative, more concise):\n";
-    prompt += "     'Thank you for sharing that. [PAUSE]\n";
-    prompt += "     Just to confirm what I've collected: Your name is John Smith, your email is john@example.com, and your phone number is zero four one two... three four five... six seven eight. [PAUSE]\n";
-    prompt += "     You're interested in voiceover production for Smith & Co. [PAUSE]\n";
-    prompt += "     That's everything I've captured so far. One of our staff will be in touch shortly. Thanks again, and have a great day.'\n";
-    prompt += "   - Example WRONG format (avoid robotic label-value style):\n";
-    prompt += "     'Here's a quick summary. Name: John Smith. Phone: zero four one two... Email: john@example.com...'\n";
-    prompt += "   - Example WRONG format (avoid run-on without pauses):\n";
-    prompt += "     'Here's what I have John Smith phone zero four one two three four five six seven eight email john@example.com service voiceover production...'\n";
-    prompt += "   - Structure guidelines:\n";
-    prompt += "     * Start with acknowledgment: 'Thank you for sharing that.' or similar\n";
-    prompt += "     * Transition: 'Here's a quick summary of what I've collected.' or 'Just to confirm what I've collected:'\n";
-    prompt += "     * Present information in natural sentences: 'Your name is [name], and your email is [email].'\n";
-    prompt += "     * Use proper phone number formatting with pauses: 'zero four one two... three four five... six seven eight'\n";
-    prompt += "     * Group related info: Contact details together, inquiry details together\n";
-    prompt += "     * End with: 'That's everything I've captured so far. One of our staff will be in touch shortly. Thanks again, and have a great day.'\n";
-    prompt += "   - DELIVER THE SUMMARY ONLY ONCE at the end of the call.\n";
-    prompt += "   - DO NOT repeat the summary unless the user explicitly asks for it.\n";
-    prompt += "   - This conversational approach sounds more natural and professional.\n\n";
+    prompt += "   - After summarizing, give the caller the option to hear it again, correct any part, or hang up if satisfied.\n";
+    prompt += "   - Say: 'Does that sound correct? Would you like me to repeat anything or make any corrections?'\n";
+    prompt += "   - Wait for caller's response. If they want corrections, acknowledge and update accordingly.\n";
+    prompt += "   - If caller confirms or says they're satisfied: 'That's everything I've captured so far. One of our staff will be in touch shortly. Thanks again, and have a great day.'\n";
+    prompt += "   - If caller wants to hear it again, repeat the summary using the same clear format.\n";
+    prompt += "   - DELIVER THE SUMMARY ONLY ONCE initially, but allow for repetition if requested.\n\n";
+    
+    // Goodbye Loop Prevention
+    prompt += "4a. GOODBYE LOOP PREVENTION:\n";
+    prompt += "   - Ensure that goodbye message is delivered ONLY ONCE, followed by hang-up or silent timeout.\n";
+    prompt += "   - After saying goodbye: 'Thanks again, and have a great day.' - DO NOT repeat it.\n";
+    prompt += "   - If caller does not disconnect, wait silently - DO NOT say 'Goodbye for now' or similar repeatedly.\n";
+    prompt += "   - After goodbye, allow natural call termination without additional prompts.\n\n";
     
     // Intent-based routing
     prompt += "5. ROUTING DECISIONS:\n";
@@ -1222,6 +1273,49 @@ export class RetellService {
         `Failed to register phone call with Retell: ${error.message || "Unknown error"}`,
         error.status || error.statusCode || HttpStatus.INTERNAL_SERVER_ERROR
       );
+    }
+  }
+
+  /**
+   * Retrieve full call details from Retell
+   * Used as a fallback when webhook payloads don't include duration,
+   * transcript_object, or recording_url.
+   */
+  async getCallDetails(retellCallId: string): Promise<any | null> {
+    if (!this.apiKey) {
+      this.logger.warn(
+        "RETELL_API_KEY is not configured. Cannot fetch call details from Retell."
+      );
+      return null;
+    }
+
+    if (!retellCallId) {
+      this.logger.warn("getCallDetails called without retellCallId");
+      return null;
+    }
+
+    try {
+      this.logger.log(`Fetching call details from Retell for call_id=${retellCallId}`);
+      // According to Retell SDK, call.get / call.retrieve should return full call object
+      // including start/end timestamps, duration_ms, transcript_object, recording_url, etc.
+      // We pass the call_id as part of the request params.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fullCall: any = await (this.client as any).call.get({
+        call_id: retellCallId,
+      });
+
+      if (!fullCall) {
+        this.logger.warn(`Retell getCallDetails returned empty result for ${retellCallId}`);
+        return null;
+      }
+
+      return fullCall;
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to fetch call details from Retell for ${retellCallId}: ${error.message}`,
+        error.stack
+      );
+      return null;
     }
   }
 
