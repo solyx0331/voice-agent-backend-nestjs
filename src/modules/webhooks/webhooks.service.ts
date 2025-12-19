@@ -124,6 +124,13 @@ export class WebhooksService {
   /**
    * Generate TwiML response for Twilio to connect to Retell
    * This tells Twilio how to handle the incoming call and connect to Retell's SIP endpoint
+   * 
+   * Barge-in and Interruption Handling:
+   * - Retell's platform inherently supports barge-in (their benchmark tests include interruption scenarios)
+   * - When using <Dial><Sip> to connect to Retell, barge-in is handled natively by Retell
+   * - Retell listens for user input even during AI speech and will interrupt/truncate automatically
+   * - If using <Say> or <Gather> before <Dial>, ensure bargeIn="true" is set
+   * 
    * @param retellCallId Retell call ID from registerPhoneCall
    * @param agentId Agent ID (optional, for logging)
    * @returns TwiML XML string
@@ -131,9 +138,10 @@ export class WebhooksService {
   generateTwiMLResponse(retellCallId: string, agentId?: string): string {
     if (!retellCallId) {
       // If no Retell call ID, return error TwiML
+      // Note: bargeIn="true" allows caller to interrupt the error message if needed
       return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say>Sorry, we're unable to connect your call at this time. Please try again later.</Say>
+  <Say bargeIn="true">Sorry, we're unable to connect your call at this time. Please try again later.</Say>
   <Hangup/>
 </Response>`;
     }
@@ -148,6 +156,15 @@ export class WebhooksService {
 
     // Return TwiML that connects Twilio call to Retell's SIP endpoint
     // This uses Twilio's <Dial> verb to connect to Retell via SIP
+    // 
+    // Barge-in Configuration:
+    // - <Dial> with <Sip> connection to Retell automatically supports barge-in
+    // - Retell's platform handles interruption detection and audio truncation
+    // - No additional TwiML attributes needed - Retell manages interruption natively
+    // - The agent's interruption_sensitivity setting (configured in Retell) controls responsiveness
+    //
+    // If you need to add <Say> or <Gather> before <Dial>, use:
+    // <Say bargeIn="true">...</Say> or <Gather bargeIn="true">...</Gather>
     return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial>

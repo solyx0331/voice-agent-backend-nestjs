@@ -42,9 +42,10 @@ export class WebhooksController {
       );
       
       // Return error TwiML response to Twilio
+      // Note: bargeIn="true" allows caller to interrupt the error message if needed
       const errorTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say>Sorry, there was an error processing your call. Please try again later.</Say>
+  <Say bargeIn="true">Sorry, there was an error processing your call. Please try again later.</Say>
   <Hangup/>
 </Response>`;
       res.type("text/xml");
