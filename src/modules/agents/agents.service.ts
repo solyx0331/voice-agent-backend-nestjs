@@ -437,8 +437,9 @@ export class AgentsService {
         if (mergedAgent.interruptionSensitivity !== undefined) {
           agentUpdateParams.interruption_sensitivity = Math.max(0, Math.min(1, mergedAgent.interruptionSensitivity));
         } else {
-          // Default to 0.5 for balanced interruption handling
-          agentUpdateParams.interruption_sensitivity = 0.5;
+          // Default to 0.6 for more responsive interruption handling
+          // Higher values = agent stops more quickly when caller interrupts
+          agentUpdateParams.interruption_sensitivity = 0.6;
           this.logger.log(`Setting default interruption_sensitivity: ${agentUpdateParams.interruption_sensitivity}`);
         }
 

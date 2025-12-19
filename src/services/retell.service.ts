@@ -498,9 +498,16 @@ export class RetellService {
     
     // Resilience to interruptions
     prompt += "9. HANDLING INTERRUPTIONS AND CORRECTIONS:\n";
-    prompt += "   - If caller interrupts you, stop speaking immediately and listen.\n";
+    prompt += "   - CRITICAL: When a caller talks over you (interrupts), you MUST immediately stop speaking.\n";
+    prompt += "   - The system will automatically truncate your current turn at the exact point where the caller interrupted.\n";
+    prompt += "   - Your next response should start from exactly where the human cut in - do NOT repeat what you were saying.\n";
+    prompt += "   - Listen carefully to what the caller said during the interruption.\n";
+    prompt += "   - Respond directly to the caller's interruption - acknowledge it and continue the conversation naturally.\n";
+    prompt += "   - Example: If you were saying 'Let me check that for you...' and caller interrupts with 'Actually, I need...',\n";
+    prompt += "     your next response should be: 'Sure, what do you need?' (NOT 'Let me check that for you. Actually, what do you need?')\n";
     prompt += "   - If caller corrects previously provided information, update your memory immediately.\n";
-    prompt += "   - If caller provides partial information, acknowledge what you received and ask for clarification only if needed.\n\n";
+    prompt += "   - If caller provides partial information, acknowledge what you received and ask for clarification only if needed.\n";
+    prompt += "   - Do NOT try to complete your interrupted sentence - the system handles truncation automatically.\n\n";
     
     // Speech Delivery Rules
     prompt += "=== SPEECH DELIVERY RULES ===\n\n";
@@ -1036,10 +1043,13 @@ export class RetellService {
       responsiveness: createAgentDto.responsiveness !== undefined 
         ? Math.max(0, Math.min(1, createAgentDto.responsiveness))
         : 0.8,
-      // Set interruption sensitivity (0.5 = balanced, allows natural interruptions)
+      // Set interruption sensitivity (0.6 = more responsive to interruptions, allows natural conversation flow)
+      // Higher values (closer to 1) = agent stops more quickly when caller interrupts
+      // Lower values (closer to 0) = agent continues speaking longer before stopping
+      // 0.6 provides good balance: agent stops promptly when interrupted but doesn't stop too easily
       interruption_sensitivity: createAgentDto.interruptionSensitivity !== undefined
         ? Math.max(0, Math.min(1, createAgentDto.interruptionSensitivity))
-        : 0.5,
+        : 0.6,
     };
 
     // Map voice_id from voice configuration
@@ -1316,6 +1326,124 @@ export class RetellService {
         error.stack
       );
       return null;
+    }
+  }
+
+  /**
+   * List all calls from Retell and return their transcripts
+   * Fetches all calls in one request (with pagination if needed)
+   * @param limit Optional limit for number of calls (default: 100, max: 1000)
+   * @param agentId Optional filter by agent ID
+   * @param startTimestamp Optional start timestamp filter
+   * @param endTimestamp Optional end timestamp filter
+   * @returns Array of calls with transcripts
+   */
+  async getAllCallTranscripts(params?: {
+    limit?: number;
+    agentId?: string;
+    startTimestamp?: number;
+    endTimestamp?: number;
+  }): Promise<Array<{
+    call_id: string;
+    transcript?: Array<{
+      role: string;
+      content: string;
+      words?: Array<{ start: number; end: number; word: string }>;
+    }>;
+    transcript_object?: Array<any>;
+    start_timestamp?: number;
+    end_timestamp?: number;
+    duration_ms?: number;
+    recording_url?: string;
+    from_number?: string;
+    to_number?: string;
+    agent_id?: string;
+  }>> {
+    if (!this.apiKey) {
+      this.logger.warn(
+        "RETELL_API_KEY is not configured. Cannot fetch calls from Retell."
+      );
+      return [];
+    }
+
+    try {
+      const limit = Math.min(params?.limit || 100, 1000); // Max 1000 per Retell API
+      const listParams: any = {
+        limit: limit,
+        sort_order: "descending" as const,
+      };
+
+      // Add optional filters
+      if (params?.agentId) {
+        listParams.filter = {
+          agent_id: [params.agentId],
+        };
+      }
+
+      if (params?.startTimestamp) {
+        if (!listParams.filter) listParams.filter = {};
+        listParams.filter.after_start_timestamp = params.startTimestamp;
+      }
+
+      if (params?.endTimestamp) {
+        if (!listParams.filter) listParams.filter = {};
+        listParams.filter.before_start_timestamp = params.endTimestamp;
+      }
+
+      this.logger.log(`Fetching all calls from Retell with params: ${JSON.stringify(listParams)}`);
+
+      // Use Retell SDK to list calls
+      // According to Retell API: https://docs.retellai.com/api-references/list-calls
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const callsResponse: any = await (this.client as any).call.list(listParams);
+
+      if (!callsResponse || !callsResponse.calls || !Array.isArray(callsResponse.calls)) {
+        this.logger.warn("Retell list calls returned invalid response");
+        return [];
+      }
+
+      const calls = callsResponse.calls;
+
+      // Extract transcripts from each call
+      const callsWithTranscripts = calls.map((call: any) => {
+        // Retell provides transcript_object which contains the full transcript
+        const transcript = call.transcript_object || [];
+        
+        return {
+          call_id: call.call_id,
+          transcript: transcript.map((item: any) => ({
+            role: item.role || "user",
+            content: item.content || item.text || "",
+            words: item.words || [],
+          })),
+          transcript_object: transcript, // Keep original format too
+          start_timestamp: call.start_timestamp,
+          end_timestamp: call.end_timestamp,
+          duration_ms: call.duration_ms,
+          recording_url: call.recording_url,
+          from_number: call.from_number,
+          to_number: call.to_number,
+          agent_id: call.agent_id,
+        };
+      });
+
+      this.logger.log(`Successfully fetched ${callsWithTranscripts.length} calls with transcripts from Retell`);
+
+      // Handle pagination if there are more calls
+      if (callsResponse.pagination_key && calls.length === limit) {
+        this.logger.log(`More calls available. Use pagination_key: ${callsResponse.pagination_key} for next page`);
+      }
+
+      return callsWithTranscripts;
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to fetch all call transcripts from Retell: ${error.message}`,
+        error.stack
+      );
+      throw new HttpException(
+        `Failed to fetch call transcripts from Retell: ${error.message || "Unknown error"}`,
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
     }
   }
 

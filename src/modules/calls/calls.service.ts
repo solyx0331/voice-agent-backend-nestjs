@@ -8,7 +8,8 @@ import { CreateCallDto, UpdateCallDto, CallFiltersDto } from "../../dto/call.dto
 export class CallsService {
   constructor(
     @InjectModel(Call.name)
-    private callModel: Model<CallDocument>
+    private callModel: Model<CallDocument>,
+    private retellService: RetellService
   ) {}
 
   private formatDate(date: Date | string): string {
@@ -233,6 +234,23 @@ export class CallsService {
     }
 
     throw new NotFoundException(`No recording URL found for call ${callId}`);
+  }
+
+  /**
+   * Get all call transcripts from Retell in one request
+   * @param limit Optional limit for number of calls (default: 100, max: 1000)
+   * @param agentId Optional filter by Retell agent ID
+   * @param startTimestamp Optional start timestamp filter (milliseconds)
+   * @param endTimestamp Optional end timestamp filter (milliseconds)
+   * @returns Array of calls with transcripts from Retell
+   */
+  async getAllRetellTranscripts(params?: {
+    limit?: number;
+    agentId?: string;
+    startTimestamp?: number;
+    endTimestamp?: number;
+  }) {
+    return this.retellService.getAllCallTranscripts(params);
   }
 
   async exportCalls(format: "csv" | "json" = "csv") {

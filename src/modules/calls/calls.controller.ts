@@ -112,5 +112,47 @@ export class CallsController {
     );
     res.send(result.data);
   }
+
+  @Get("retell/transcripts")
+  async getAllRetellTranscripts(
+    @Query("limit") limit?: string,
+    @Query("agentId") agentId?: string,
+    @Query("startTimestamp") startTimestamp?: string,
+    @Query("endTimestamp") endTimestamp?: string
+  ) {
+    const params: {
+      limit?: number;
+      agentId?: string;
+      startTimestamp?: number;
+      endTimestamp?: number;
+    } = {};
+
+    if (limit) {
+      const limitNum = parseInt(limit, 10);
+      if (!isNaN(limitNum) && limitNum > 0) {
+        params.limit = Math.min(limitNum, 1000); // Max 1000
+      }
+    }
+
+    if (agentId) {
+      params.agentId = agentId;
+    }
+
+    if (startTimestamp) {
+      const startTs = parseInt(startTimestamp, 10);
+      if (!isNaN(startTs)) {
+        params.startTimestamp = startTs;
+      }
+    }
+
+    if (endTimestamp) {
+      const endTs = parseInt(endTimestamp, 10);
+      if (!isNaN(endTs)) {
+        params.endTimestamp = endTs;
+      }
+    }
+
+    return this.callsService.getAllRetellTranscripts(params);
+  }
 }
 

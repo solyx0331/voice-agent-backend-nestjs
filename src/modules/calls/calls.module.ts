@@ -3,13 +3,15 @@ import { MongooseModule } from "@nestjs/mongoose";
 import { CallsController } from "./calls.controller";
 import { CallsService } from "./calls.service";
 import { Call, CallSchema } from "../../schemas/call.schema";
+import { RetellService } from "../../services/retell.service";
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Call.name, schema: CallSchema }]),
   ],
   controllers: [CallsController],
-  providers: [CallsService],
+  providers: [CallsService, RetellService],
+  exports: [CallsService],
 })
 export class CallsModule {}
 
