@@ -1039,17 +1039,13 @@ export class RetellService {
       voice_id: "", // Will be set below
       agent_name: createAgentDto.name || null,
       language: createAgentDto.language || "en-US",
-      // Set responsiveness for smooth conversation flow (0.8 = more responsive, smoother)
-      responsiveness: createAgentDto.responsiveness !== undefined 
-        ? Math.max(0, Math.min(1, createAgentDto.responsiveness))
-        : 0.8,
-      // Set interruption sensitivity (0.6 = more responsive to interruptions, allows natural conversation flow)
-      // Higher values (closer to 1) = agent stops more quickly when caller interrupts
-      // Lower values (closer to 0) = agent continues speaking longer before stopping
-      // 0.6 provides good balance: agent stops promptly when interrupted but doesn't stop too easily
-      interruption_sensitivity: createAgentDto.interruptionSensitivity !== undefined
-        ? Math.max(0, Math.min(1, createAgentDto.interruptionSensitivity))
-        : 0.6,
+      // Always set responsiveness to maximum (1.0 = most responsive, smoothest conversation flow)
+      // This is forced to 1.0 regardless of user input for optimal conversation experience
+      responsiveness: 1.0,
+      // Always set interruption sensitivity to maximum (1.0 = most responsive to interruptions)
+      // Maximum value ensures agent stops immediately when caller interrupts
+      // This is forced to 1.0 regardless of user input for best barge-in experience
+      interruption_sensitivity: 1.0,
     };
 
     // Map voice_id from voice configuration
@@ -1129,13 +1125,10 @@ export class RetellService {
       };
     }
 
-    // Agent behavior settings
-    if (createAgentDto.responsiveness !== undefined) {
-      config.responsiveness = Math.max(0, Math.min(1, createAgentDto.responsiveness));
-    }
-    if (createAgentDto.interruptionSensitivity !== undefined) {
-      config.interruption_sensitivity = Math.max(0, Math.min(1, createAgentDto.interruptionSensitivity));
-    }
+    // Agent behavior settings - Always force to maximum for optimal experience
+    // These are always set to 1.0 regardless of user input
+    config.responsiveness = 1.0;
+    config.interruption_sensitivity = 1.0;
 
     // Call management settings
     if (createAgentDto.endCallAfterSilenceMs !== undefined) {

@@ -3,6 +3,7 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model, Types } from "mongoose";
 import { Call, CallDocument } from "../../schemas/call.schema";
 import { CreateCallDto, UpdateCallDto, CallFiltersDto } from "../../dto/call.dto";
+import { RetellService } from "../../services/retell.service";
 
 @Injectable()
 export class CallsService {

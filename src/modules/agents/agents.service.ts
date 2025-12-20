@@ -426,22 +426,11 @@ export class AgentsService {
           this.logger.log(`Setting default voice settings: temperature=0.7, speed=0.85, volume=1.0`);
         }
         
-        // Agent behavior settings (with defaults for smooth flow)
-        if (mergedAgent.responsiveness !== undefined) {
-          agentUpdateParams.responsiveness = Math.max(0, Math.min(1, mergedAgent.responsiveness));
-        } else {
-          // Default to 0.8 for smooth, responsive conversation
-          agentUpdateParams.responsiveness = 0.8;
-          this.logger.log(`Setting default responsiveness: ${agentUpdateParams.responsiveness}`);
-        }
-        if (mergedAgent.interruptionSensitivity !== undefined) {
-          agentUpdateParams.interruption_sensitivity = Math.max(0, Math.min(1, mergedAgent.interruptionSensitivity));
-        } else {
-          // Default to 0.6 for more responsive interruption handling
-          // Higher values = agent stops more quickly when caller interrupts
-          agentUpdateParams.interruption_sensitivity = 0.6;
-          this.logger.log(`Setting default interruption_sensitivity: ${agentUpdateParams.interruption_sensitivity}`);
-        }
+        // Agent behavior settings - Always force to maximum (1.0) for optimal experience
+        // These are always set to 1.0 regardless of user input
+        agentUpdateParams.responsiveness = 1.0;
+        agentUpdateParams.interruption_sensitivity = 1.0;
+        this.logger.log(`Forcing responsiveness and interruption_sensitivity to 1.0 (maximum) for optimal conversation experience`);
 
         // Call management settings (if provided)
         if (mergedAgent.endCallAfterSilenceMs !== undefined) {
