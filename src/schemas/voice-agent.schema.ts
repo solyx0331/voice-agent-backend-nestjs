@@ -168,6 +168,13 @@ export class VoiceAgent {
   @Prop()
   beginMessageDelayMs?: number; // Delay before first message (0-5000ms)
 
+  // Retell API fields for ambient sound
+  @Prop({ type: String, enum: ["coffee-shop", "convention-hall", "summer-outdoor", "mountain-outdoor", "static-noise", "call-center"] })
+  ambientSound?: "coffee-shop" | "convention-hall" | "summer-outdoor" | "mountain-outdoor" | "static-noise" | "call-center"; // Ambient background sound type
+
+  @Prop()
+  ambientSoundVolume?: number; // Ambient sound volume (0-2, default: 1)
+
   createdAt: Date;
   updatedAt: Date;
 }

@@ -443,6 +443,30 @@ export class AgentsService {
           agentUpdateParams.begin_message_delay_ms = Math.max(0, Math.min(5000, mergedAgent.beginMessageDelayMs));
         }
         
+        // Ambient sound settings
+        if (mergedAgent.ambientSound) {
+          agentUpdateParams.ambient_sound = mergedAgent.ambientSound;
+          // Set volume if provided, otherwise default to 1.0
+          agentUpdateParams.ambient_sound_volume = mergedAgent.ambientSoundVolume !== undefined
+            ? Math.max(0, Math.min(2, mergedAgent.ambientSoundVolume))
+            : 1.0;
+        } else if (mergedAgent.ambientSound === null || mergedAgent.ambientSound === undefined) {
+          // Allow clearing ambient sound by setting to null
+          agentUpdateParams.ambient_sound = null;
+        }
+        
+        // ===== STATIC CONFIGURATION FOR TESTING =====
+        // These settings are always applied to ensure consistent behavior
+        agentUpdateParams.stt_mode = "accurate"; // Optimize for accuracy
+        agentUpdateParams.vocab_specialization = "general"; // General vocabulary
+        agentUpdateParams.normalize_for_speech = true; // Enable speech normalization
+        agentUpdateParams.boosted_keywords = []; // Empty boosted keywords
+        agentUpdateParams.enable_backchannel = true; // Enable backchanneling
+        agentUpdateParams.backchannel_frequency = 0.8; // Backchannel frequency 80%
+        agentUpdateParams.backchannel_words = []; // Use default backchannel words
+        agentUpdateParams.reminder_trigger_ms = 10000; // Reminder after 10 seconds
+        agentUpdateParams.reminder_max_count = 1; // Max 1 reminder per call
+        
         // Configure voicemail option if updated
         if (mergedAgent.callRules?.fallbackToVoicemail) {
           const voicemailMessage =

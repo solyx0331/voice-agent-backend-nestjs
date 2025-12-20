@@ -362,6 +362,15 @@ export class CreateAgentDto {
   @IsOptional()
   @IsNumber()
   beginMessageDelayMs?: number; // Delay before first message (0-5000ms)
+
+  // Retell API fields for ambient sound
+  @IsOptional()
+  @IsEnum(["coffee-shop", "convention-hall", "summer-outdoor", "mountain-outdoor", "static-noise", "call-center"])
+  ambientSound?: "coffee-shop" | "convention-hall" | "summer-outdoor" | "mountain-outdoor" | "static-noise" | "call-center"; // Ambient background sound type
+
+  @IsOptional()
+  @IsNumber()
+  ambientSoundVolume?: number; // Ambient sound volume (0-2, default: 1)
 }
 
 export class UpdateAgentDto {
@@ -454,5 +463,14 @@ export class UpdateAgentDto {
   @IsOptional()
   @IsNumber()
   beginMessageDelayMs?: number; // Delay before first message (0-5000ms)
+
+  // Retell API fields for ambient sound
+  @IsOptional()
+  @IsEnum(["coffee-shop", "convention-hall", "summer-outdoor", "mountain-outdoor", "static-noise", "call-center"])
+  ambientSound?: "coffee-shop" | "convention-hall" | "summer-outdoor" | "mountain-outdoor" | "static-noise" | "call-center"; // Ambient background sound type
+
+  @IsOptional()
+  @IsNumber()
+  ambientSoundVolume?: number; // Ambient sound volume (0-2, default: 1)
 }
 

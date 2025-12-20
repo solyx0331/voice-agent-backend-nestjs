@@ -1141,6 +1141,40 @@ export class RetellService {
       config.begin_message_delay_ms = Math.max(0, Math.min(5000, createAgentDto.beginMessageDelayMs));
     }
 
+    // Ambient sound settings
+    if (createAgentDto.ambientSound) {
+      config.ambient_sound = createAgentDto.ambientSound;
+      // Set volume if provided, otherwise default to 1.0
+      config.ambient_sound_volume = createAgentDto.ambientSoundVolume !== undefined
+        ? Math.max(0, Math.min(2, createAgentDto.ambientSoundVolume))
+        : 1.0;
+    }
+
+    // ===== STATIC CONFIGURATION FOR TESTING =====
+    // These settings are hardcoded based on manual configuration in Retell dashboard
+    
+    // Transcription & Speech Settings
+    config.stt_mode = "accurate"; // Optimize for accuracy (instead of "fast")
+    config.vocab_specialization = "general"; // General vocabulary (not "medical")
+    config.normalize_for_speech = true; // Enable speech normalization (numbers, dates, currency)
+    config.boosted_keywords = []; // Empty array for boosted keywords
+    
+    // Backchannel Settings
+    config.enable_backchannel = true; // Enable backchanneling (affirmations like "yeah", "uh-huh")
+    config.backchannel_frequency = 0.8; // Backchannel frequency (0-1, 0.8 = 80%)
+    config.backchannel_words = []; // Empty array - use default backchannel words
+    
+    // Reminder Settings
+    config.reminder_trigger_ms = 10000; // Trigger reminder after 10 seconds of silence
+    config.reminder_max_count = 1; // Maximum 1 reminder per call
+    
+    // Note: Denoising mode ("Remove noise + background speech") is typically handled
+    // at the call level or through audio processing settings that may not be directly
+    // configurable via the agent API. If Retell provides this via agent config,
+    // it would typically be a field like `denoising_mode` or similar.
+    
+    this.logger.log("Static transcription and speech settings applied: stt_mode=accurate, vocab=general, backchannel=enabled");
+
     return config;
   }
 
