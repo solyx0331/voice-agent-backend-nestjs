@@ -1314,6 +1314,74 @@ export class RetellService {
   }
 
   /**
+   * Create a web call for testing an agent in the browser
+   * This creates a web call session that can be connected via WebRTC
+   * @param agentId Retell agent ID
+   * @returns Retell web call response with call_id and connection details
+   */
+  async createWebCall(agentId: string): Promise<any> {
+    if (!this.apiKey) {
+      throw new HttpException(
+        "RETELL_API_KEY is not configured.",
+        HttpStatus.UNAUTHORIZED
+      );
+    }
+
+    if (!agentId) {
+      throw new HttpException(
+        "Agent ID is required to create a web call.",
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    try {
+      this.logger.log(
+        `Creating web call with Retell for agent ${agentId}`
+      );
+
+      // Retell web call API endpoint
+      // According to Retell docs: POST /v2/create-web-call
+      const params: any = {
+        agent_id: agentId,
+      };
+
+      // Use Retell SDK to create web call
+      // Note: The Retell SDK might not have this method, so we'll use direct API call
+      const response = await fetch("https://api.retellai.com/v2/create-web-call", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(params),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Retell API error: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+
+      this.logger.log(
+        `Successfully created web call with Retell. Call ID: ${data.call_id}`
+      );
+
+      return data;
+    } catch (error: any) {
+      this.logger.error(
+        `Error creating web call with Retell: ${error.message}`,
+        error.stack
+      );
+
+      throw new HttpException(
+        `Failed to create web call with Retell: ${error.message || "Unknown error"}`,
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+
+  /**
    * Retrieve full call details from Retell
    * Used as a fallback when webhook payloads don't include duration,
    * transcript_object, or recording_url.

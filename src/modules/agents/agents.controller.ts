@@ -61,5 +61,10 @@ export class AgentsController {
     await this.agentsService.remove(id);
     return { message: "Agent deleted successfully" };
   }
+
+  @Post(":id/test/web-call")
+  async createWebCallTest(@Param("id") id: string) {
+    return this.agentsService.createWebCallTest(id);
+  }
 }
 

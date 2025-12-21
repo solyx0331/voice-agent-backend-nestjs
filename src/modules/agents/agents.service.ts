@@ -506,6 +506,41 @@ export class AgentsService {
     };
   }
 
+  /**
+   * Create a web call for testing an agent in the browser
+   * @param agentId Agent ID
+   * @returns Web call details with call_id and connection information
+   */
+  async createWebCallTest(agentId: string) {
+    const agent = await this.agentModel.findById(agentId);
+    if (!agent) {
+      throw new NotFoundException(`Agent with ID ${agentId} not found`);
+    }
+
+    if (!agent.retellAgentId) {
+      throw new HttpException(
+        "Agent does not have a Retell agent ID. Please ensure the agent is properly configured.",
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    try {
+      const webCall = await this.retellService.createWebCall(agent.retellAgentId);
+      return {
+        callId: webCall.call_id,
+        token: webCall.token,
+        status: webCall.status,
+        type: webCall.type,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to create web call test: ${error.message}`,
+        error.stack
+      );
+      throw error;
+    }
+  }
+
   async updateStatus(id: string, status: "active" | "inactive" | "busy") {
     const agent = await this.agentModel.findByIdAndUpdate(
       id,
