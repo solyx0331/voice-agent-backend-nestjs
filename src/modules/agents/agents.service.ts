@@ -526,11 +526,26 @@ export class AgentsService {
 
     try {
       const webCall = await this.retellService.createWebCall(agent.retellAgentId);
+      
+      this.logger.log(`Web call response from Retell: ${JSON.stringify(webCall)}`);
+      
+      // Retell API returns access_token (not token) and call_id
+      const callId = webCall.call_id || webCall.callId;
+      const token = webCall.access_token || webCall.token;
+      
+      if (!callId || !token) {
+        this.logger.error(`Invalid web call response: ${JSON.stringify(webCall)}`);
+        throw new HttpException(
+          `Invalid response from Retell API. Missing call_id or token. Response: ${JSON.stringify(webCall)}`,
+          HttpStatus.INTERNAL_SERVER_ERROR
+        );
+      }
+      
       return {
-        callId: webCall.call_id,
-        token: webCall.token,
-        status: webCall.status,
-        type: webCall.type,
+        callId: callId,
+        token: token,
+        status: webCall.status || "created",
+        type: webCall.type || "web",
       };
     } catch (error: any) {
       this.logger.error(

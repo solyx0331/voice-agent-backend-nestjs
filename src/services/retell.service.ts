@@ -1364,8 +1364,16 @@ export class RetellService {
       const data = await response.json();
 
       this.logger.log(
-        `Successfully created web call with Retell. Call ID: ${data.call_id}`
+        `Successfully created web call with Retell. Response: ${JSON.stringify(data)}`
       );
+
+      // Log the full response for debugging
+      if (!data.call_id && !data.callId) {
+        this.logger.warn(`Web call response missing call_id. Full response: ${JSON.stringify(data)}`);
+      }
+      if (!data.token && !data.access_token) {
+        this.logger.warn(`Web call response missing token. Full response: ${JSON.stringify(data)}`);
+      }
 
       return data;
     } catch (error: any) {
