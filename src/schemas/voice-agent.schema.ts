@@ -165,17 +165,27 @@ export class VoiceAgent {
   @Prop({ type: Object })
   baseLogic?: {
     greetingMessage: string;
+    globalRouteHandlers?: Array<{
+      id: string;
+      action: string;
+      condition?: string;
+      response: string;
+      followUpPrompt?: string;
+      endCall?: boolean;
+    }>;
     routingLogics?: Array<{
       id: string;
       name: string;
       condition: string;
       action: string;
       response: string;
+      followUpPrompt?: string;
       informationGathering: Array<{
         question: string;
       }>;
       fieldSchemaIds?: string[]; // Field schema IDs - references to global fieldSchemas (for mapping, not editing)
       completionResponse?: string; // Response after collecting information/lead data
+      displayOrder?: number; // Display order for sequential steps
       routingLogics?: Array<any>; // Recursive nested routing logic
     }>;
     // Legacy fields for backward compatibility

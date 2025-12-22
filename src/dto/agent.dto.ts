@@ -298,6 +298,10 @@ export class RoutingLogicDto {
   @IsString()
   response: string;
 
+  @IsOptional()
+  @IsString()
+  followUpPrompt?: string; // Prompt after initial response
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => InformationGatheringQuestionDto)
@@ -313,15 +317,48 @@ export class RoutingLogicDto {
   completionResponse?: string; // Response after collecting information/lead data
 
   @IsOptional()
+  @IsNumber()
+  displayOrder?: number; // Display order for sequential steps
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => RoutingLogicDto)
   routingLogics?: RoutingLogicDto[]; // Recursive nested routing logic
 }
 
+export class GlobalRouteHandlerDto {
+  @IsString()
+  id: string;
+
+  @IsString()
+  action: string;
+
+  @IsOptional()
+  @IsString()
+  condition?: string;
+
+  @IsString()
+  response: string;
+
+  @IsOptional()
+  @IsString()
+  followUpPrompt?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  endCall?: boolean;
+}
+
 export class BaseLogicDto {
   @IsString()
   greetingMessage: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => GlobalRouteHandlerDto)
+  globalRouteHandlers?: GlobalRouteHandlerDto[];
 
   @IsOptional()
   @IsArray()
