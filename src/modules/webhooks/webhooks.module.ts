@@ -9,6 +9,7 @@ import { ElevenLabsService } from "../../services/elevenlabs.service";
 import { StorageService } from "../../services/storage.service";
 import { EmailService } from "../../services/email.service";
 import { WebSocketModule } from "../websocket/websocket.module";
+import { ConversationModule } from "../conversation/conversation.module";
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { WebSocketModule } from "../websocket/websocket.module";
       { name: Call.name, schema: CallSchema },
     ]),
     forwardRef(() => WebSocketModule),
+    ConversationModule, // Import to access IntentRoutingDispatcherService
   ],
   controllers: [WebhooksController],
   providers: [WebhooksService, RetellService, ElevenLabsService, StorageService, EmailService],
