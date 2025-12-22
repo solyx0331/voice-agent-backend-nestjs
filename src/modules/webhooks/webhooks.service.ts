@@ -599,8 +599,19 @@ Call Summary:
     // Recursive function to process routing logics (including nested ones)
     const processRoutingLogics = (routings: any[]) => {
       routings.forEach((routing) => {
-        // Add field schemas from this routing logic (replaces leadCaptureFields)
-        routing.fieldSchemas?.forEach((field: any) => {
+        // Add field schemas from this routing logic - resolve fieldSchemaIds to full field objects
+        let routingFields: any[] = [];
+        if (routing.fieldSchemaIds && routing.fieldSchemaIds.length > 0 && agent.fieldSchemas) {
+          // Resolve field IDs to full field objects from global fieldSchemas
+          routingFields = agent.fieldSchemas.filter((f: any) => 
+            routing.fieldSchemaIds.includes(f.id)
+          );
+        } else if (routing.fieldSchemas && routing.fieldSchemas.length > 0) {
+          // Legacy support: if fieldSchemas array exists (old format), use it directly
+          routingFields = routing.fieldSchemas;
+        }
+        
+        routingFields.forEach((field: any) => {
           if (!seenFieldNames.has(field.fieldName)) {
             fields.push({
               label: field.label || field.fieldName,

@@ -242,10 +242,21 @@ export class RetellService {
               });
             }
             
-            // Field schemas for this routing block (replaces leadCaptureFields)
-            if (routing.fieldSchemas && routing.fieldSchemas.length > 0) {
+            // Field schemas for this routing block - resolve fieldSchemaIds to full field objects
+            let routingFields: any[] = [];
+            if (routing.fieldSchemaIds && routing.fieldSchemaIds.length > 0 && createAgentDto.fieldSchemas) {
+              // Resolve field IDs to full field objects from global fieldSchemas
+              routingFields = createAgentDto.fieldSchemas.filter((f: any) => 
+                routing.fieldSchemaIds.includes(f.id)
+              );
+            } else if (routing.fieldSchemas && routing.fieldSchemas.length > 0) {
+              // Legacy support: if fieldSchemas array exists (old format), use it directly
+              routingFields = routing.fieldSchemas;
+            }
+            
+            if (routingFields.length > 0) {
               prompt += `${indent}- Field Schemas for this route (ASK ONE AT A TIME):\n`;
-              routing.fieldSchemas.forEach((field: any, idx: number) => {
+              routingFields.forEach((field: any, idx: number) => {
                 const promptText = field.promptText || field.label || `What is your ${field.fieldName}?`;
                 prompt += `${indent}  * Field ${idx + 1}: ${field.label} (${field.fieldName}, ${field.dataType})`;
                 if (field.required) {

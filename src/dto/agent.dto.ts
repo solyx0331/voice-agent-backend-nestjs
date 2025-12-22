@@ -305,9 +305,8 @@ export class RoutingLogicDto {
 
   @IsOptional()
   @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => FieldSchemaDto)
-  fieldSchemas?: FieldSchemaDto[];
+  @IsString({ each: true })
+  fieldSchemaIds?: string[]; // Field schema IDs - references to global fieldSchemas
 
   @IsOptional()
   @IsString()
