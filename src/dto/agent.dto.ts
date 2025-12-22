@@ -59,6 +59,95 @@ export class IntentDto {
   response?: string;
 }
 
+// New Dynamic Intent Definition DTO
+export class IntentDefinitionDto {
+  @IsString()
+  id: string;
+
+  @IsString()
+  name: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  sampleUtterances: string[];
+
+  @IsEnum(["semantic", "regex"])
+  matchingType: "semantic" | "regex";
+
+  @IsString()
+  routingAction: string;
+
+  @IsBoolean()
+  enabled: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  confidenceThreshold?: number;
+
+  @IsOptional()
+  @IsString()
+  regexPattern?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
+
+// New Field Schema DTO
+export class FieldSchemaDto {
+  @IsString()
+  id: string;
+
+  @IsString()
+  label: string;
+
+  @IsString()
+  fieldName: string;
+
+  @IsEnum(["text", "phone", "email", "number", "choice", "date", "boolean"])
+  dataType: "text" | "phone" | "email" | "number" | "choice" | "date" | "boolean";
+
+  @IsBoolean()
+  required: boolean;
+
+  @IsNumber()
+  displayOrder: number;
+
+  @IsOptional()
+  @IsString()
+  promptText?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  nlpExtractionHints?: string[];
+
+  @IsOptional()
+  @IsObject()
+  validationRules?: {
+    regex?: string;
+    minLength?: number;
+    maxLength?: number;
+    min?: number;
+    max?: number;
+    pattern?: string;
+    errorMessage?: string;
+  };
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  choiceOptions?: string[];
+
+  @IsOptional()
+  @IsString()
+  defaultValue?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
+
 export class BusinessHoursScheduleDto {
   @IsString()
   day: string;
@@ -311,6 +400,25 @@ export class CreateAgentDto {
   @Type(() => IntentDto)
   intents?: IntentDto[];
 
+  // New Dynamic Intent Definitions
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => IntentDefinitionDto)
+  intentDefinitions?: IntentDefinitionDto[];
+
+  // New Field Schemas
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FieldSchemaDto)
+  fieldSchemas?: FieldSchemaDto[];
+
+  // Schema version for migration/compatibility
+  @IsOptional()
+  @IsString()
+  schemaVersion?: string;
+
   @IsOptional()
   @IsObject()
   @ValidateNested()
@@ -411,6 +519,25 @@ export class UpdateAgentDto {
   @ValidateNested({ each: true })
   @Type(() => IntentDto)
   intents?: IntentDto[];
+
+  // New Dynamic Intent Definitions
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => IntentDefinitionDto)
+  intentDefinitions?: IntentDefinitionDto[];
+
+  // New Field Schemas
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FieldSchemaDto)
+  fieldSchemas?: FieldSchemaDto[];
+
+  // Schema version for migration/compatibility
+  @IsOptional()
+  @IsString()
+  schemaVersion?: string;
 
   @IsOptional()
   @IsObject()
