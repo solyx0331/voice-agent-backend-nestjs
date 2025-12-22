@@ -599,15 +599,15 @@ Call Summary:
     // Recursive function to process routing logics (including nested ones)
     const processRoutingLogics = (routings: any[]) => {
       routings.forEach((routing) => {
-        // Add lead capture fields from this routing logic (these have explicit field names)
-        routing.leadCaptureFields?.forEach((field: any) => {
-          if (!seenFieldNames.has(field.name)) {
+        // Add field schemas from this routing logic (replaces leadCaptureFields)
+        routing.fieldSchemas?.forEach((field: any) => {
+          if (!seenFieldNames.has(field.fieldName)) {
             fields.push({
-              label: field.question || field.name,
-              fieldName: field.name,
+              label: field.label || field.fieldName,
+              fieldName: field.fieldName,
               includeInEmail: true,
             });
-            seenFieldNames.add(field.name);
+            seenFieldNames.add(field.fieldName);
           }
         });
 

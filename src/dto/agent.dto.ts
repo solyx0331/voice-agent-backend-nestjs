@@ -282,20 +282,6 @@ export class InformationGatheringQuestionDto {
   question: string;
 }
 
-export class RoutingLeadCaptureFieldDto {
-  @IsString()
-  name: string;
-
-  @IsString()
-  question: string;
-
-  @IsBoolean()
-  required: boolean;
-
-  @IsEnum(["text", "email", "phone", "number"])
-  type: "text" | "email" | "phone" | "number";
-}
-
 export class RoutingLogicDto {
   @IsString()
   id: string;
@@ -317,10 +303,11 @@ export class RoutingLogicDto {
   @Type(() => InformationGatheringQuestionDto)
   informationGathering: InformationGatheringQuestionDto[];
 
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => RoutingLeadCaptureFieldDto)
-  leadCaptureFields: RoutingLeadCaptureFieldDto[];
+  @Type(() => FieldSchemaDto)
+  fieldSchemas?: FieldSchemaDto[];
 
   @IsOptional()
   @IsString()

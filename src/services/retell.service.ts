@@ -242,19 +242,33 @@ export class RetellService {
               });
             }
             
-            // Lead capture fields for this routing block
-            if (routing.leadCaptureFields && routing.leadCaptureFields.length > 0) {
-              prompt += `${indent}- Lead Capture Fields for this route (ASK ONE AT A TIME):\n`;
-              routing.leadCaptureFields.forEach((field: any, idx: number) => {
-                prompt += `${indent}  * Field ${idx + 1}: ${field.name} (${field.type}): ${field.question}`;
+            // Field schemas for this routing block (replaces leadCaptureFields)
+            if (routing.fieldSchemas && routing.fieldSchemas.length > 0) {
+              prompt += `${indent}- Field Schemas for this route (ASK ONE AT A TIME):\n`;
+              routing.fieldSchemas.forEach((field: any, idx: number) => {
+                const promptText = field.promptText || field.label || `What is your ${field.fieldName}?`;
+                prompt += `${indent}  * Field ${idx + 1}: ${field.label} (${field.fieldName}, ${field.dataType})`;
                 if (field.required) {
                   prompt += " [Required - but do not pressure verbally]";
                 } else {
                   prompt += " [Optional - caller can skip]";
                 }
-                prompt += `\n${indent}    → Ask this question ONLY if the caller hasn't already provided ${field.name}.\n`;
+                prompt += `\n${indent}    → Question: ${promptText}\n`;
+                prompt += `\n${indent}    → Ask this question ONLY if the caller hasn't already provided ${field.fieldName}.\n`;
                 prompt += `${indent}    → Wait for the answer before moving to the next field.\n`;
-                prompt += `${indent}    → Store the answer under the key: "${field.name}"\n`;
+                prompt += `${indent}    → Store the answer under the key: "${field.fieldName}"\n`;
+                if (field.validationRules) {
+                  prompt += `${indent}    → Validation: `;
+                  if (field.validationRules.regex || field.validationRules.pattern) {
+                    prompt += `Must match pattern\n`;
+                  }
+                  if (field.validationRules.minLength) {
+                    prompt += `${indent}      → Minimum length: ${field.validationRules.minLength}\n`;
+                  }
+                  if (field.validationRules.maxLength) {
+                    prompt += `${indent}      → Maximum length: ${field.validationRules.maxLength}\n`;
+                  }
+                }
               });
             }
             

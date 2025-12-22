@@ -174,11 +174,27 @@ export class VoiceAgent {
       informationGathering: Array<{
         question: string;
       }>;
-      leadCaptureFields: Array<{
-        name: string;
-        question: string;
+      fieldSchemas?: Array<{
+        id: string;
+        label: string;
+        fieldName: string;
+        dataType: "text" | "phone" | "email" | "number" | "choice" | "date" | "boolean";
         required: boolean;
-        type: "text" | "email" | "phone" | "number";
+        displayOrder: number;
+        promptText?: string;
+        nlpExtractionHints?: string[];
+        validationRules?: {
+          regex?: string;
+          minLength?: number;
+          maxLength?: number;
+          min?: number;
+          max?: number;
+          pattern?: string;
+          errorMessage?: string;
+        };
+        choiceOptions?: string[];
+        defaultValue?: string;
+        description?: string;
       }>;
       completionResponse?: string; // Response after collecting information/lead data
       routingLogics?: Array<any>; // Recursive nested routing logic
