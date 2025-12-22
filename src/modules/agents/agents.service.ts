@@ -372,6 +372,12 @@ export class AgentsService {
         if (mergedAgent.notifications?.crm?.endpoint) {
           agentUpdateParams.webhook_url = mergedAgent.notifications.crm.endpoint;
         }
+
+        // Update call recording setting
+        if (mergedAgent.enableRecording !== undefined) {
+          (agentUpdateParams as any).enable_recording = mergedAgent.enableRecording;
+          this.logger.log(`Updating call recording setting: ${mergedAgent.enableRecording ? 'enabled' : 'disabled'}`);
+        }
         
         // Always include voice_id if we have it (even if unchanged, to ensure it's set)
         // If voice was updated, use the new voiceId; otherwise keep existing voice

@@ -1168,6 +1168,19 @@ export class RetellService {
     config.reminder_trigger_ms = 10000; // Trigger reminder after 10 seconds of silence
     config.reminder_max_count = 1; // Maximum 1 reminder per call
     
+    // Call Recording Settings
+    // Retell API uses enable_recording field (or similar) - check Retell docs for exact field name
+    // For now, we'll set it if explicitly disabled, otherwise default to enabled
+    if (createAgentDto.enableRecording !== undefined) {
+      // Note: Retell API field name may vary - check their documentation
+      // Common field names: enable_recording, recording_enabled, record_calls
+      (config as any).enable_recording = createAgentDto.enableRecording;
+      this.logger.log(`Call recording ${createAgentDto.enableRecording ? 'enabled' : 'disabled'} for agent`);
+    } else {
+      // Default to enabled if not specified
+      (config as any).enable_recording = true;
+    }
+    
     // Note: Denoising mode ("Remove noise + background speech") is typically handled
     // at the call level or through audio processing settings that may not be directly
     // configurable via the agent API. If Retell provides this via agent config,

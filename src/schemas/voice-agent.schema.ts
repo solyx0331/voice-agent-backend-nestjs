@@ -219,6 +219,14 @@ export class VoiceAgent {
   @Prop()
   ambientSoundVolume?: number; // Ambient sound volume (0-2, default: 1)
 
+  // Call recording settings
+  @Prop({ default: true })
+  enableRecording?: boolean; // Whether to record calls (default: true)
+
+  // Custom routing actions defined by the user
+  @Prop({ type: Array })
+  customRoutingActions?: string[]; // User-defined custom routing actions (e.g., "schedule-appointment", "check-status")
+
   createdAt: Date;
   updatedAt: Date;
 }

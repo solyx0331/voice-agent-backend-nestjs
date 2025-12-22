@@ -479,6 +479,17 @@ export class CreateAgentDto {
   @IsOptional()
   @IsNumber()
   ambientSoundVolume?: number; // Ambient sound volume (0-2, default: 1)
+
+  // Call recording settings
+  @IsOptional()
+  @IsBoolean()
+  enableRecording?: boolean; // Whether to record calls (default: true)
+
+  // Custom routing actions
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  customRoutingActions?: string[]; // User-defined custom routing actions
 }
 
 export class UpdateAgentDto {
@@ -599,5 +610,16 @@ export class UpdateAgentDto {
   @IsOptional()
   @IsNumber()
   ambientSoundVolume?: number; // Ambient sound volume (0-2, default: 1)
+
+  // Call recording settings
+  @IsOptional()
+  @IsBoolean()
+  enableRecording?: boolean; // Whether to record calls (default: true)
+
+  // Custom routing actions
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  customRoutingActions?: string[]; // User-defined custom routing actions
 }
 
