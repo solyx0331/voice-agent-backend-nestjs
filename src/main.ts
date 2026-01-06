@@ -5,8 +5,8 @@ import { AppModule } from "./app.module";
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Get allowed origins from environment or use defaults
-  const allowedOrigins = process.env.ALLOWED_ORIGINS
+  // Build static whitelist of allowed origins (required for credentials: true)
+  const staticOrigins: string[] = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim().replace(/\/$/, ""))
     : [
         "http://localhost:3000",
@@ -18,97 +18,90 @@ async function bootstrap() {
         "https://voice-agent-phi-ten.vercel.app",
       ];
 
-  // Get allowed origin patterns (for Vercel, Netlify, ngrok, etc.)
-  // Convert string patterns to RegExp if needed
-  const allowedPatterns = process.env.ALLOWED_ORIGIN_PATTERNS
-    ? process.env.ALLOWED_ORIGIN_PATTERNS.split(",").map((pattern) => {
-        const trimmed = pattern.trim();
-        // If it's already a regex string, convert it
-        if (trimmed.startsWith("^") && trimmed.endsWith("$")) {
-          return new RegExp(trimmed);
+  // Add Vercel pattern matching origins dynamically (for Railway/Vercel compatibility)
+  const vercelPattern = /^https:\/\/.*\.vercel\.app$/;
+  const netlifyPattern = /^https:\/\/.*\.netlify\.app$/;
+  const ngrokPattern = /^https:\/\/.*\.ngrok(-free)?\.(dev|io)$/;
+
+  // Helper to check if origin matches patterns
+  // Returns: allowed origin string, true (for no-origin requests), or false (rejected)
+  const isOriginAllowed = (origin: string | undefined): string | true | false => {
+    if (!origin) {
+      // Allow requests with no origin (e.g., Postman, curl) - return true, not wildcard
+      return true;
+    }
+
+    const normalized = origin.replace(/\/$/, "");
+
+    // Check static whitelist (case-insensitive)
+    const exactMatch = staticOrigins.find(
+      (allowed) => allowed.toLowerCase() === normalized.toLowerCase()
+    );
+    if (exactMatch) {
+      return exactMatch; // Return whitelisted origin (not dynamic one)
+    }
+
+    // Check Vercel pattern (validated pattern, safe to return actual origin)
+    if (vercelPattern.test(normalized)) {
+      return normalized;
+    }
+
+    // Check Netlify pattern
+    if (netlifyPattern.test(normalized)) {
+      return normalized;
+    }
+
+    // Check ngrok pattern
+    if (ngrokPattern.test(normalized)) {
+      return normalized;
+    }
+
+    // In development, allow all origins
+    if (process.env.NODE_ENV === "development") {
+      return normalized;
+    }
+
+    // Reject in production if not in whitelist
+    return false;
+  };
+
+  // Explicit OPTIONS handler middleware - MUST be first
+  app.use((req, res, next) => {
+    if (req.method === "OPTIONS") {
+      const origin = req.headers.origin;
+      const allowedOrigin = isOriginAllowed(origin);
+
+      if (allowedOrigin !== false) {
+        // For no-origin requests, don't set Access-Control-Allow-Origin (browser won't send credentials anyway)
+        if (allowedOrigin !== true) {
+          res.header("Access-Control-Allow-Origin", allowedOrigin);
+          res.header("Access-Control-Allow-Credentials", "true");
         }
-        // Otherwise treat as string pattern
-        return trimmed;
-      })
-    : [
-        /^https:\/\/.*\.vercel\.app$/,
-        /^https:\/\/.*\.netlify\.app$/,
-        /^https:\/\/.*\.ngrok-free\.dev$/,
-        /^https:\/\/.*\.ngrok\.io$/,
-      ];
+        res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD");
+        res.header(
+          "Access-Control-Allow-Headers",
+          "Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers, ngrok-skip-browser-warning"
+        );
+        res.header("Access-Control-Max-Age", "86400");
+        res.header("Access-Control-Expose-Headers", "Content-Range, X-Content-Range");
+        return res.status(204).send();
+      }
 
-  console.log("Allowed CORS origins:", allowedOrigins);
-  console.log("Allowed CORS patterns:", allowedPatterns);
-  console.log("NODE_ENV:", process.env.NODE_ENV);
+      // Reject preflight if origin not allowed
+      return res.status(403).send("CORS policy: Origin not allowed");
+    }
+    next();
+  });
 
-  // Enable CORS FIRST - before any other middleware
-  // Use a simple, reliable configuration that always allows Vercel
+  // CORS configuration (for non-OPTIONS requests)
   app.enableCors({
     origin: (origin, callback) => {
-      console.log("CORS check - Origin:", origin);
-      
-      // Always allow requests with no origin
-      if (!origin) {
-        console.log("CORS: Allowing request with no origin");
-        return callback(null, true);
+      const allowedOrigin = isOriginAllowed(origin);
+      if (allowedOrigin !== false) {
+        callback(null, allowedOrigin);
+      } else {
+        callback(new Error("CORS policy: Origin not allowed"));
       }
-
-      // Normalize origin
-      const normalizedOrigin = origin.replace(/\/$/, "");
-      console.log("CORS: Normalized origin:", normalizedOrigin);
-
-      // ALWAYS allow Vercel origins - this is the primary use case
-      if (/^https:\/\/.*\.vercel\.app$/.test(normalizedOrigin)) {
-        console.log("CORS: Allowing Vercel origin:", normalizedOrigin);
-        return callback(null, normalizedOrigin);
-      }
-
-      // Check exact match
-      const originLower = normalizedOrigin.toLowerCase();
-      const isExactMatch = allowedOrigins.some(
-        (allowed) => allowed.toLowerCase() === originLower
-      );
-
-      if (isExactMatch) {
-        console.log("CORS: Allowing origin (exact match):", normalizedOrigin);
-        return callback(null, normalizedOrigin);
-      }
-
-      // Check pattern match
-      const matchesPattern = allowedPatterns.some((pattern) => {
-        try {
-          if (pattern instanceof RegExp) {
-            return pattern.test(normalizedOrigin);
-          }
-          if (typeof pattern === "string") {
-            return normalizedOrigin.includes(pattern);
-          }
-          return false;
-        } catch (e) {
-          return false;
-        }
-      });
-
-      if (matchesPattern) {
-        console.log("CORS: Allowing origin (pattern match):", normalizedOrigin);
-        return callback(null, normalizedOrigin);
-      }
-
-      // In production, always allow Vercel as ultimate fallback
-      if (/vercel\.app/.test(normalizedOrigin)) {
-        console.log("CORS: Allowing Vercel origin (fallback):", normalizedOrigin);
-        return callback(null, normalizedOrigin);
-      }
-
-      // For development, allow all
-      if (process.env.NODE_ENV === "development") {
-        console.log("CORS: Allowing origin (development):", normalizedOrigin);
-        return callback(null, normalizedOrigin);
-      }
-
-      // Final fallback: allow all in production to prevent blocking
-      console.log("CORS: Allowing origin (final fallback):", normalizedOrigin);
-      return callback(null, normalizedOrigin);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
@@ -128,17 +121,16 @@ async function bootstrap() {
     maxAge: 86400,
   });
 
-  // API prefix (set before validation pipe to ensure CORS works on all routes)
+  // API prefix
   app.setGlobalPrefix("api");
 
-  // Global validation pipe (skip validation for webhook endpoints and OPTIONS requests)
+  // Global validation pipe (NestJS automatically skips OPTIONS, but we ensure it)
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
       skipMissingProperties: false,
-      // Don't validate OPTIONS requests (preflight)
       skipNullProperties: false,
     })
   );
@@ -146,6 +138,8 @@ async function bootstrap() {
   const port = process.env.PORT || 8000;
   await app.listen(port);
   console.log(`Application is running on: http://localhost:${port}`);
+  console.log(`CORS enabled for origins: ${staticOrigins.join(", ")}`);
+  console.log(`CORS patterns: Vercel, Netlify, ngrok`);
 }
 
 bootstrap();
