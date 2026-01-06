@@ -28,57 +28,48 @@ import { ConversationModule } from "./modules/conversation/conversation.module";
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
-        // Hardcoded database configuration
+        // Railway MongoDB provides MONGO_URL or DATABASE_URL
+        // Check both environment variables (Railway uses MONGO_URL, but we also support DATABASE_URL)
         const databaseUrl = 
+          process.env.MONGO_URL ||
           process.env.DATABASE_URL || 
-          configService.get<string>("DATABASE_URL") ||
-          "mongodb+srv://admin:EF7XnO2jDMgGGLMo@voiceai.8anhs3c.mongodb.net/?appName=voiceai";
+          configService.get<string>("MONGO_URL") ||
+          configService.get<string>("DATABASE_URL");
+        
         const dbName = 
           process.env.DB_NAME || 
           configService.get<string>("DB_NAME") || 
           "voice_ai_agent";
         
-        console.log("databaseUrl  ==>", databaseUrl);
+        if (!databaseUrl) {
+          throw new Error(
+            "MongoDB connection string is required. Please set MONGO_URL or DATABASE_URL environment variable."
+          );
+        }
 
-        if (databaseUrl) {
-          // Ensure database name is included in the connection string
-          let uri = databaseUrl;
+        console.log("Connecting to MongoDB...");
+        console.log("Database URL:", databaseUrl.replace(/\/\/[^:]+:[^@]+@/, "//***:***@")); // Hide credentials in logs
+
+        // Ensure database name is included in the connection string
+        let uri = databaseUrl;
+        
+        // Check if database name is missing (URI ends with / or ?)
+        const urlMatch = uri.match(/^mongodb(\+srv)?:\/\/[^/]+(\/|$|\?)/);
+        if (urlMatch && !uri.includes(`/${dbName}`) && !uri.match(/\/[^?]+(\?|$)/)) {
+          // Extract query parameters if they exist
+          const urlParts = uri.split("?");
+          const baseUrl = urlParts[0];
+          const queryParams = urlParts[1] || "";
           
-          // Check if database name is missing (URI ends with / or ?)
-          const urlMatch = uri.match(/^mongodb(\+srv)?:\/\/[^/]+(\/|$|\?)/);
-          if (urlMatch && !uri.includes(`/${dbName}`) && !uri.match(/\/[^?]+(\?|$)/)) {
-            // Extract query parameters if they exist
-            const urlParts = uri.split("?");
-            const baseUrl = urlParts[0];
-            const queryParams = urlParts[1] || "";
-            
-            // Add database name before query parameters
-            const separator = baseUrl.endsWith("/") ? "" : "/";
-            uri = `${baseUrl}${separator}${dbName}${queryParams ? `?${queryParams}` : ""}`;
-          }
-
-          return {
-            uri,
-            retryWrites: true,
-            w: "majority",
-          };
+          // Add database name before query parameters
+          const separator = baseUrl.endsWith("/") ? "" : "/";
+          uri = `${baseUrl}${separator}${dbName}${queryParams ? `?${queryParams}` : ""}`;
         }
-
-        // Fallback: construct from individual config variables
-        const host = configService.get<string>("DB_HOST") || "localhost";
-        const port = configService.get<string>("DB_PORT") || "27017";
-        const database = dbName;
-        const username = configService.get<string>("DB_USERNAME");
-        const password = configService.get<string>("DB_PASSWORD");
-
-        let uri = `mongodb://`;
-        if (username && password) {
-          uri += `${username}:${password}@`;
-        }
-        uri += `${host}:${port}/${database}`;
 
         return {
           uri,
+          retryWrites: true,
+          w: "majority",
         };
       },
       inject: [ConfigService],
