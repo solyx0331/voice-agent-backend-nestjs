@@ -432,26 +432,34 @@ export class RetellService {
     prompt += "   - Escalate to human fallback ONLY after failure to match intent confidently, NOT on first error.\n";
     prompt += "   - If caller accepts callback, acknowledge it and note it in the summary.\n\n";
     
-    // Email & Phone Accuracy
-    prompt += "3. EMAIL & PHONE ACCURACY:\n";
+    // Email & Phone Accuracy - STRICT SYSTEM-LEVEL RULES
+    prompt += "3. EMAIL & PHONE ACCURACY (SYSTEM-ENFORCED):\n";
     prompt += "   - Email Address Handling:\n";
     prompt += "     * Enable enhanced phonetic tolerance when capturing email addresses.\n";
     prompt += "     * If confidence is low, ask for spelling: 'Could you please spell that for me?'\n";
     prompt += "     * Confirm email addresses clearly: 'Just to confirm, was that john@example.com?'\n";
-    prompt += "   - Australian Mobile Number Recognition:\n";
-    prompt += "     * Strengthen recognition for Australian mobile format: 0400 670 219\n";
-    prompt += "     * Capture format: 0400 670 219\n";
-    prompt += "     * Readback format: 'Zero four zero zero... [pause] six seven zero... [pause] two one nine'\n";
-    prompt += "     * ALWAYS require confirmation: 'Just to confirm, was that 0400 670 219?'\n";
-    prompt += "   - Phone Number Formatting:\n";
-    prompt += "     * CRITICAL: All Australian phone numbers must be read using standard natural groupings with short pauses.\n";
-    prompt += "     * Mobile format (0412 345 678): Say as 'Zero four one two... [pause] three four five... [pause] six seven eight'\n";
-    prompt += "     * Landline format (03 9123 4567): Say as 'Zero three... [pause] nine one two three... [pause] four five six seven'\n";
-    prompt += "     * Split and pace number delivery clearly to match human readability standards.\n";
-    prompt += "     * Use natural pauses (0.5-1 second) between digit groups.\n";
-    prompt += "   - Postcode Formatting:\n";
-    prompt += "     * Format postcodes: Read digits individually with brief pauses (e.g., 'Three... zero... zero... zero').\n";
-    prompt += "     * When confirming postcodes, always use this clear, paced format.\n\n";
+    prompt += "   - Australian Phone Number Handling (CRITICAL - SYSTEM ENFORCED):\n";
+    prompt += "     * CRITICAL: Phone numbers are ALREADY FORMATTED by the system. DO NOT reformat them.\n";
+    prompt += "     * CRITICAL: When confirming a phone number, use the EXACT formatted value provided by the system.\n";
+    prompt += "     * CRITICAL: NEVER read phone numbers digit-by-digit. NEVER say individual digits like 'zero', 'four', 'one', 'two' separately.\n";
+    prompt += "     * CRITICAL: NEVER say the word 'pause' when reading phone numbers.\n";
+    prompt += "     * CRITICAL: The system provides phone numbers in natural format (e.g., '04 12 345 678'). Use this EXACT format.\n";
+    prompt += "     * Example CORRECT confirmation: 'Just to confirm, I have your mobile number as 04 12 345 678. Is that correct?'\n";
+    prompt += "     * Example WRONG (DO NOT DO THIS): 'Zero four one two three four five six seven eight'\n";
+    prompt += "     * Example WRONG (DO NOT DO THIS): 'Zero four... pause... one two... pause... three four five'\n";
+    prompt += "     * If you receive a phone number that is NOT in the natural format, ask the caller to repeat it.\n";
+    prompt += "     * DO NOT attempt to format or reorganize phone numbers yourself.\n";
+    prompt += "     * DO NOT explain how Australian phone numbers work or how many digits they have.\n";
+    prompt += "     * If a phone number is already confirmed, DO NOT re-ask or re-read it.\n";
+    prompt += "   - Postcode Handling (CRITICAL - SYSTEM ENFORCED):\n";
+    prompt += "     * CRITICAL: Postcodes are ALREADY FORMATTED by the system. DO NOT reformat them.\n";
+    prompt += "     * CRITICAL: When confirming a postcode, use the EXACT formatted value provided by the system.\n";
+    prompt += "     * CRITICAL: The system provides postcodes in natural spoken format (e.g., 'three zero zero zero').\n";
+    prompt += "     * CRITICAL: NEVER say the word 'pause' when reading postcodes.\n";
+    prompt += "     * Example CORRECT confirmation: 'Just to confirm, your postcode is three zero zero zero?'\n";
+    prompt += "     * Example WRONG (DO NOT DO THIS): 'Three... pause... zero... pause... zero... pause... zero'\n";
+    prompt += "     * DO NOT read postcodes as a single number (e.g., 'three thousand').\n";
+    prompt += "     * If a postcode is already confirmed, DO NOT re-ask or re-read it.\n\n";
     
     // Call Summary and Exit
     prompt += "4. CALL SUMMARY AND EXIT:\n";
@@ -465,22 +473,25 @@ export class RetellService {
     prompt += "   - Use consistent KEY → VALUE phrasing with a brief pause (0.5-1 second) between fields.\n";
     prompt += "   - AVOID ambiguous phrasing that merges multiple values or sounds like a sentence.\n";
     prompt += "   - Each field should feel like its own paragraph when spoken - use clear sectioning.\n";
+    prompt += "   - CRITICAL FOR PHONE NUMBERS: Use the EXACT formatted value provided by the system (e.g., '04 12 345 678').\n";
+    prompt += "   - CRITICAL FOR PHONE NUMBERS: NEVER read phone numbers digit-by-digit in summaries.\n";
+    prompt += "   - CRITICAL FOR POSTCODES: Use the EXACT formatted value provided by the system (e.g., 'three zero zero zero').\n";
     prompt += "   - Example CORRECT format (clear and well-separated):\n";
     prompt += "     'Would you like me to read back the summary of the information I've gathered, or should we end the call here?'\n";
     prompt += "     [If user confirms:]\n";
     prompt += "     'Here's what I have:\n";
     prompt += "     Full Name: John Smith. [PAUSE 0.5-1s]\n";
-    prompt += "     Phone Number: Zero four one two... [pause] three four five... [pause] six seven eight. [PAUSE 0.5-1s]\n";
+    prompt += "     Phone Number: 04 12 345 678. [PAUSE 0.5-1s]\n";
     prompt += "     Email Address: john [at] example [dot] com. [PAUSE 0.5-1s]\n";
     prompt += "     Product: Vinyl Stickers. [PAUSE 0.5-1s]\n";
     prompt += "     Quantity: Five hundred. [PAUSE 0.5-1s]\n";
-    prompt += "     Postcode: Three zero zero zero.'\n";
+    prompt += "     Postcode: three zero zero zero.'\n";
     prompt += "   - Example WRONG format (avoid - runs together, hard to distinguish):\n";
     prompt += "     'John Smith zero four one two three four five six seven eight john@example.com'\n";
     prompt += "   - DO NOT say '[pause]' or '[PAUSE]' during summaries - these are literal tokens that should NOT be spoken.\n";
     prompt += "   - Use natural pauses (silence) between items, but DO NOT verbalize the word 'pause'.\n";
     prompt += "   - For email addresses, spell them clearly: 'john [at] example [dot] com' instead of rushing through 'john@example.com'.\n";
-    prompt += "   - For phone numbers, use the proper paced format: 'Zero four one two... [pause] three four five... [pause] six seven eight'.\n";
+    prompt += "   - For phone numbers, use the EXACT system-provided format: '04 12 345 678' (read naturally, not digit-by-digit).\n";
     prompt += "   - Speak SLOWLY and CLEARLY when delivering the summary - this is important information.\n";
     prompt += "   - After summarizing, give the caller the option to hear it again, correct any part, or hang up if satisfied.\n";
     prompt += "   - Say: 'Does that sound correct? Would you like me to repeat anything or make any corrections?'\n";
@@ -519,7 +530,12 @@ export class RetellService {
     prompt += "8. DATA CAPTURE FORMAT:\n";
     prompt += "   - Store all collected data as structured key-value pairs internally.\n";
     prompt += "   - Each piece of information should be mapped to its specific field name.\n";
-    prompt += "   - Do NOT store information as free text blobs. Use the exact field names provided.\n\n";
+    prompt += "   - Do NOT store information as free text blobs. Use the exact field names provided.\n";
+    prompt += "   - CRITICAL FOR PHONE NUMBERS: When you capture a phone number, it will be automatically formatted by the system.\n";
+    prompt += "   - CRITICAL FOR PHONE NUMBERS: Always use the formatted version (e.g., '04 12 345 678') when confirming or referencing phone numbers.\n";
+    prompt += "   - CRITICAL FOR POSTCODES: When you capture a postcode, it will be automatically formatted by the system.\n";
+    prompt += "   - CRITICAL FOR POSTCODES: Always use the formatted version (e.g., 'three zero zero zero') when confirming or referencing postcodes.\n";
+    prompt += "   - NEVER reformat phone numbers or postcodes - use them exactly as provided by the system.\n\n";
     
     // Resilience to interruptions
     prompt += "9. HANDLING INTERRUPTIONS AND CORRECTIONS:\n";

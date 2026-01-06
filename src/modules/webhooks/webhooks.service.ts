@@ -8,6 +8,8 @@ import { ElevenLabsService } from "../../services/elevenlabs.service";
 import { StorageService } from "../../services/storage.service";
 import { EmailService } from "../../services/email.service";
 import { LiveCallsGateway } from "../websocket/websocket.gateway";
+import { normalizeAustralianPhone, extractPhoneFromText } from "../../services/utils/phone-normalizer";
+import { normalizeAustralianPostcode, extractPostcodeFromText } from "../../services/utils/postcode-normalizer";
 
 @Injectable()
 export class WebhooksService {
@@ -740,16 +742,16 @@ Call Summary:
       extracted.email = emailMatch[1];
     }
 
-    // Extract phone number
-    const phonePatterns = [
-      /(?:phone|number|contact|call me at|reach me at)[\s:]+([+]?[\d\s\-\(\)]{10,})/i,
-      /([+]?[\d\s\-\(\)]{10,})/,
-    ];
-    for (const pattern of phonePatterns) {
-      const match = fullText.match(pattern);
-      if (match && match[1].replace(/\D/g, "").length >= 10) {
-        extracted.phoneNumber = match[1].trim();
-        break;
+    // Extract phone number using normalization utility
+    const extractedPhone = extractPhoneFromText(fullText);
+    if (extractedPhone) {
+      const normalized = normalizeAustralianPhone(extractedPhone);
+      if (normalized.isValid) {
+        // Store both raw and spoken formats
+        extracted.phoneNumber = normalized.spokenPhoneNumber; // Use spoken format for display/readback
+        extracted.phoneNumberRaw = normalized.rawPhoneNumber; // Store raw for storage
+      } else {
+        extracted.phoneNumber = extractedPhone; // Fallback to raw if invalid
       }
     }
 

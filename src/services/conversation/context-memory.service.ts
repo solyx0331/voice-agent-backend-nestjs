@@ -2,10 +2,15 @@ import { Injectable, Logger, OnModuleInit, Inject, Optional } from "@nestjs/comm
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { VoiceAgent, VoiceAgentDocument } from "../../schemas/voice-agent.schema";
+import { normalizeAustralianPhone, extractPhoneFromText, getPhoneReadbackFormat } from "../utils/phone-normalizer";
+import { normalizeAustralianPostcode, extractPostcodeFromText, getPostcodeReadbackFormat } from "../utils/postcode-normalizer";
 
 export interface FieldValue {
   value: any;
+  rawValue?: string; // Raw value for phone/postcode (e.g., "0412345678")
+  spokenValue?: string; // Spoken format for phone/postcode (e.g., "04 12 345 678")
   filled: boolean;
+  confirmed: boolean; // Whether this field has been confirmed by caller
   timestamp?: Date;
   source?: "user" | "agent" | "system";
 }
@@ -132,13 +137,20 @@ export class ContextMemoryService implements OnModuleInit {
       }
       
       if (value !== null && value !== undefined) {
+        // Check if we have raw/spoken formats stored
+        const rawValue = extracted[`${fieldName}_raw`];
+        const spokenValue = extracted[`${fieldName}_spoken`];
+        
         context.fields[fieldName] = {
           value,
+          rawValue: rawValue || undefined,
+          spokenValue: spokenValue || undefined,
           filled: true,
+          confirmed: false, // Will be set to true when caller confirms
           timestamp: new Date(),
           source: "user",
         };
-        this.logger.debug(`Updated field ${fieldName} = ${value} for call ${callId}`);
+        this.logger.debug(`Updated field ${fieldName} = ${value} (raw: ${rawValue || 'N/A'}, spoken: ${spokenValue || 'N/A'}) for call ${callId}`);
       }
     }
 
@@ -181,12 +193,19 @@ export class ContextMemoryService implements OnModuleInit {
           break;
 
         case "phone":
-          // Australian phone format: 04XX XXX XXX or +61 4XX XXX XXX
-          const phoneMatch = utterance.match(
-            /(?:\+?61|0)?[2-478](?:[ -]?[0-9]){8}/
-          );
-          if (phoneMatch) {
-            value = phoneMatch[0].replace(/\s+/g, " ");
+          // Extract phone number using utility
+          const extractedPhone = extractPhoneFromText(utterance);
+          if (extractedPhone) {
+            const normalized = normalizeAustralianPhone(extractedPhone);
+            if (normalized.isValid) {
+              // Store both raw and spoken formats
+              extracted[`${schema.fieldName}_raw`] = normalized.rawPhoneNumber;
+              extracted[`${schema.fieldName}_spoken`] = normalized.spokenPhoneNumber;
+              // Main value is the spoken format for LLM to use
+              value = normalized.spokenPhoneNumber;
+            } else {
+              value = extractedPhone; // Fallback to raw if invalid
+            }
           }
           break;
 
@@ -212,28 +231,47 @@ export class ContextMemoryService implements OnModuleInit {
 
         case "text":
         default:
-          // Use NLP hints if available
-          if (schema.nlpExtractionHints && schema.nlpExtractionHints.length > 0) {
-            for (const hint of schema.nlpExtractionHints) {
-              const hintLower = hint.toLowerCase();
-              if (lowerUtterance.includes(hintLower)) {
-                // Try to extract value after the hint
-                const hintIndex = lowerUtterance.indexOf(hintLower);
-                const afterHint = utterance.substring(hintIndex + hint.length).trim();
-                const valueMatch = afterHint.match(/^[^\s,\.!?]+/);
-                if (valueMatch) {
-                  value = valueMatch[0].trim();
-                  break;
+          // Check if field name suggests it's a postcode
+          if (schema.fieldName.toLowerCase().includes('postcode') || 
+              schema.fieldName.toLowerCase().includes('postalcode') ||
+              schema.fieldName.toLowerCase().includes('zipcode')) {
+            const extractedPostcode = extractPostcodeFromText(utterance);
+            if (extractedPostcode) {
+              const normalized = normalizeAustralianPostcode(extractedPostcode);
+              if (normalized.isValid) {
+                // Store both raw and spoken formats
+                extracted[`${schema.fieldName}_raw`] = normalized.rawPostcode;
+                extracted[`${schema.fieldName}_spoken`] = normalized.spokenPostcode;
+                // Main value is the spoken format for LLM to use
+                value = normalized.spokenPostcode;
+              } else {
+                value = extractedPostcode; // Fallback to raw if invalid
+              }
+            }
+          } else {
+            // Use NLP hints if available
+            if (schema.nlpExtractionHints && schema.nlpExtractionHints.length > 0) {
+              for (const hint of schema.nlpExtractionHints) {
+                const hintLower = hint.toLowerCase();
+                if (lowerUtterance.includes(hintLower)) {
+                  // Try to extract value after the hint
+                  const hintIndex = lowerUtterance.indexOf(hintLower);
+                  const afterHint = utterance.substring(hintIndex + hint.length).trim();
+                  const valueMatch = afterHint.match(/^[^\s,\.!?]+/);
+                  if (valueMatch) {
+                    value = valueMatch[0].trim();
+                    break;
+                  }
                 }
               }
             }
-          }
-          
-          // If no hints, and it's the current question being asked, use the utterance as value
-          // (This is a simple heuristic - in production, use better NLP)
-          if (!value && utterance.trim().length > 0) {
-            // Don't auto-extract text without hints
-            value = null;
+            
+            // If no hints, and it's the current question being asked, use the utterance as value
+            // (This is a simple heuristic - in production, use better NLP)
+            if (!value && utterance.trim().length > 0) {
+              // Don't auto-extract text without hints
+              value = null;
+            }
           }
           break;
       }
@@ -262,6 +300,44 @@ export class ContextMemoryService implements OnModuleInit {
       return false;
     }
     return context.fields[fieldName]?.filled || false;
+  }
+
+  /**
+   * Check if a field is confirmed (user has confirmed it's correct)
+   */
+  isConfirmed(callId: string, fieldName: string): boolean {
+    const context = this.contextStore.get(callId);
+    if (!context) {
+      return false;
+    }
+    return context.fields[fieldName]?.confirmed || false;
+  }
+
+  /**
+   * Mark a field as confirmed
+   */
+  confirmField(callId: string, fieldName: string): void {
+    const context = this.contextStore.get(callId);
+    if (!context || !context.fields[fieldName]) {
+      return;
+    }
+    context.fields[fieldName].confirmed = true;
+    context.updatedAt = new Date();
+    this.contextStore.set(callId, context);
+    this.logger.debug(`Field ${fieldName} confirmed for call ${callId}`);
+  }
+
+  /**
+   * Get spoken format for a field (for phone/postcode readback)
+   */
+  getSpokenFormat(callId: string, fieldName: string): string | null {
+    const context = this.contextStore.get(callId);
+    if (!context || !context.fields[fieldName]) {
+      return null;
+    }
+    const field = context.fields[fieldName];
+    // Return spoken format if available, otherwise return value
+    return field.spokenValue || field.value || null;
   }
 
   /**
