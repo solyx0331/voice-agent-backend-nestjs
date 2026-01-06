@@ -755,15 +755,34 @@ export class RetellService {
         );
       }
 
+      // CRITICAL: voice_id is REQUIRED to prevent voice switching during conversation
+      // Without voice_id, Retell may use different default voices for different parts of the conversation
+      // This causes the agent to sound like two different voices
       if (!config.voice_id) {
+        this.logger.error(`CRITICAL: voice_id is missing! This will cause voice inconsistency during conversations.`);
         throw new HttpException(
-          "voice_id is required",
+          "voice_id is required to maintain consistent voice throughout the conversation. Please configure a voice for the agent.",
           HttpStatus.BAD_REQUEST
         );
       }
-
+      
+      // CRITICAL: Ensure all voice parameters are set together
+      // Missing parameters may cause Retell to use defaults, leading to voice inconsistency
+      if (config.voice_temperature === undefined) {
+        config.voice_temperature = 0.7;
+        this.logger.log(`Setting default voice_temperature: 0.7`);
+      }
+      if (config.voice_speed === undefined) {
+        config.voice_speed = 0.85;
+        this.logger.log(`Setting default voice_speed: 0.85`);
+      }
+      if (config.volume === undefined) {
+        config.volume = 1.0;
+        this.logger.log(`Setting default volume: 1.0`);
+      }
+      
       const llmId = (config.response_engine as any).llm_id;
-      this.logger.log(`Creating agent with LLM ID: ${llmId}, Voice ID: ${config.voice_id}`);
+      this.logger.log(`Creating agent with LLM ID: ${llmId}, Voice ID: ${config.voice_id}, temperature=${config.voice_temperature}, speed=${config.voice_speed}, volume=${config.volume}`);
 
       // Verify LLM exists before creating agent
       const llmExists = await this.verifyLlmExists(llmId);
@@ -953,6 +972,31 @@ export class RetellService {
   ): Promise<AgentResponse> {
     try {
       this.logger.log(`Updating Retell agent: ${agentId}`);
+      
+      // CRITICAL: Log voice configuration to ensure it's being set
+      // Voice settings must be explicitly included in every update to prevent voice switching
+      if (config.voice_id) {
+        this.logger.log(`Voice configuration in update: voice_id=${config.voice_id}, temperature=${config.voice_temperature}, speed=${config.voice_speed}, volume=${config.volume}`);
+      } else {
+        this.logger.warn(`WARNING: voice_id is missing in agent update! This may cause voice switching during conversation.`);
+      }
+      
+      // CRITICAL: Ensure all voice parameters are set together if voice_id is present
+      // This prevents Retell from using default/fallback settings that could cause voice inconsistency
+      if (config.voice_id) {
+        if (config.voice_temperature === undefined) {
+          config.voice_temperature = 0.7;
+          this.logger.log(`Setting default voice_temperature in update: 0.7`);
+        }
+        if (config.voice_speed === undefined) {
+          config.voice_speed = 0.85;
+          this.logger.log(`Setting default voice_speed in update: 0.85`);
+        }
+        if (config.volume === undefined) {
+          config.volume = 1.0;
+          this.logger.log(`Setting default volume in update: 1.0`);
+        }
+      }
 
       // Use Retell SDK to update agent
       const agentResponse = await this.client.agent.update(agentId, config);
@@ -1105,11 +1149,14 @@ export class RetellService {
       }
     } else {
       // Even if no voice config provided, set defaults to prevent issues
+      // CRITICAL: These defaults ensure consistent voice across all TTS outputs
       config.voice_temperature = 0.7;
       config.voice_speed = 0.85; // Slower pace for natural speech with breath control
       config.volume = 1.0;
+      this.logger.warn(`No voice configuration provided - using default voice settings. This may cause voice inconsistency.`);
     }
 
+    // CRITICAL: voice_id must always be set to prevent voice switching during conversation
     // If no voice_id is set, try to find an Australian voice as default
     if (!config.voice_id) {
       try {

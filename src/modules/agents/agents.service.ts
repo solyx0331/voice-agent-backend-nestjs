@@ -379,8 +379,8 @@ export class AgentsService {
           this.logger.log(`Updating call recording setting: ${mergedAgent.enableRecording ? 'enabled' : 'disabled'}`);
         }
         
-        // Always include voice_id if we have it (even if unchanged, to ensure it's set)
-        // If voice was updated, use the new voiceId; otherwise keep existing voice
+        // CRITICAL: Always include voice_id to prevent voice switching during conversation
+        // If voice was updated, use the new voiceId; otherwise preserve existing voice
         if (voiceId) {
           agentUpdateParams.voice_id = voiceId;
           this.logger.log(`Setting voice_id in Retell update: ${voiceId}`);
@@ -394,42 +394,44 @@ export class AgentsService {
             agentUpdateParams.voice_id = await this.retellService.mapDisplayNameToVoiceId(agent.voice.genericVoice);
             this.logger.log(`Preserving existing generic voice_id: ${agentUpdateParams.voice_id}`);
           }
+        } else {
+          // If no voice config at all, this is an error - voice should always be set
+          this.logger.error(`WARNING: Agent ${agent.retellAgentId} has no voice configuration! This may cause voice switching issues.`);
         }
+        
+        // CRITICAL: Always set voice parameters together to maintain consistency
+        // This prevents Retell from using default/fallback voice settings
 
-        // Voice settings (if provided) - check both update DTO and merged agent
-        const voiceSettings = updateAgentDto.voice || mergedAgent.voice;
+        // CRITICAL: Always set voice parameters together to maintain consistency
+        // This prevents Retell from using default/fallback voice settings that could cause voice switching
+        const voiceSettings = updateAgentDto.voice || mergedAgent.voice || agent.voice;
         if (voiceSettings) {
           const voice = voiceSettings as any; // Type assertion for voice settings
-          if (voice.temperature !== undefined) {
-            agentUpdateParams.voice_temperature = Math.max(0, Math.min(2, voice.temperature));
-            this.logger.log(`Updating voice_temperature: ${agentUpdateParams.voice_temperature}`);
-          } else if (!mergedAgent.voice?.temperature) {
-            // Set default if not previously set
-            agentUpdateParams.voice_temperature = 0.7;
-            this.logger.log(`Setting default voice_temperature: ${agentUpdateParams.voice_temperature}`);
-          }
-          if (voice.speed !== undefined) {
-            agentUpdateParams.voice_speed = Math.max(0.5, Math.min(2, voice.speed));
-            this.logger.log(`Updating voice_speed: ${agentUpdateParams.voice_speed}`);
-          } else if (!mergedAgent.voice?.speed) {
-            // Set default if not previously set (slower pace for natural speech with breath control)
-            agentUpdateParams.voice_speed = 0.85;
-            this.logger.log(`Setting default voice_speed: ${agentUpdateParams.voice_speed}`);
-          }
-          if (voice.volume !== undefined) {
-            agentUpdateParams.volume = Math.max(0, Math.min(2, voice.volume));
-            this.logger.log(`Updating volume: ${agentUpdateParams.volume}`);
-          } else if (!mergedAgent.voice?.volume) {
-            // Set default if not previously set
-            agentUpdateParams.volume = 1.0;
-            this.logger.log(`Setting default volume: ${agentUpdateParams.volume}`);
-          }
+          // Always set all voice parameters explicitly, even if unchanged
+          agentUpdateParams.voice_temperature = voice.temperature !== undefined 
+            ? Math.max(0, Math.min(2, voice.temperature))
+            : (agent.voice?.temperature ?? 0.7);
+          agentUpdateParams.voice_speed = voice.speed !== undefined
+            ? Math.max(0.5, Math.min(2, voice.speed))
+            : (agent.voice?.speed ?? 0.85);
+          agentUpdateParams.volume = voice.volume !== undefined
+            ? Math.max(0, Math.min(2, voice.volume))
+            : (agent.voice?.volume ?? 1.0);
+          this.logger.log(`Setting voice parameters: temperature=${agentUpdateParams.voice_temperature}, speed=${agentUpdateParams.voice_speed}, volume=${agentUpdateParams.volume}`);
         } else {
           // No voice settings at all, set defaults to prevent speech issues
           agentUpdateParams.voice_temperature = 0.7;
           agentUpdateParams.voice_speed = 0.85;
           agentUpdateParams.volume = 1.0;
           this.logger.log(`Setting default voice settings: temperature=0.7, speed=0.85, volume=1.0`);
+        }
+        
+        // CRITICAL: Ensure voice_id is always set when updating voice parameters
+        // This prevents Retell from falling back to a default voice
+        if (!agentUpdateParams.voice_id) {
+          this.logger.error(`CRITICAL: voice_id is missing in agent update! This will cause voice switching. Voice must be explicitly set.`);
+          // If we still don't have voice_id, we cannot proceed - voice_id is required
+          // The error will be caught by Retell API validation, but we log it here for visibility
         }
         
         // Agent behavior settings - Always force to maximum (1.0) for optimal experience
