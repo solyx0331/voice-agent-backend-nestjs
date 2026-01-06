@@ -19,8 +19,17 @@ async function bootstrap() {
       ];
 
   // Get allowed origin patterns (for Vercel, Netlify, ngrok, etc.)
+  // Convert string patterns to RegExp if needed
   const allowedPatterns = process.env.ALLOWED_ORIGIN_PATTERNS
-    ? process.env.ALLOWED_ORIGIN_PATTERNS.split(",").map((pattern) => pattern.trim())
+    ? process.env.ALLOWED_ORIGIN_PATTERNS.split(",").map((pattern) => {
+        const trimmed = pattern.trim();
+        // If it's already a regex string, convert it
+        if (trimmed.startsWith("^") && trimmed.endsWith("$")) {
+          return new RegExp(trimmed);
+        }
+        // Otherwise treat as string pattern
+        return trimmed;
+      })
     : [
         /^https:\/\/.*\.vercel\.app$/,
         /^https:\/\/.*\.netlify\.app$/,
@@ -30,6 +39,7 @@ async function bootstrap() {
 
   console.log("Allowed CORS origins:", allowedOrigins);
   console.log("Allowed CORS patterns:", allowedPatterns);
+  console.log("NODE_ENV:", process.env.NODE_ENV);
 
   // Enable CORS with explicit configuration
   app.enableCors({
@@ -44,8 +54,13 @@ async function bootstrap() {
         // Normalize origin (remove trailing slash)
         const normalizedOrigin = origin.replace(/\/$/, "");
 
-        // Check if origin is in allowed list
-        if (allowedOrigins.includes(normalizedOrigin) || allowedOrigins.includes(origin)) {
+        // Check if origin is in allowed list (case-insensitive)
+        const originLower = normalizedOrigin.toLowerCase();
+        const isExactMatch = allowedOrigins.some(
+          (allowed) => allowed.toLowerCase() === originLower || allowed.toLowerCase() === origin.toLowerCase()
+        );
+
+        if (isExactMatch) {
           console.log("CORS: Allowing origin (exact match):", origin);
           return callback(null, origin);
         }
@@ -56,8 +71,13 @@ async function bootstrap() {
             if (pattern instanceof RegExp) {
               return pattern.test(normalizedOrigin) || pattern.test(origin);
             }
-            return normalizedOrigin.includes(pattern) || origin.includes(pattern);
+            // String pattern matching
+            if (typeof pattern === "string") {
+              return normalizedOrigin.includes(pattern) || origin.includes(pattern);
+            }
+            return false;
           } catch (e) {
+            console.error("CORS pattern matching error:", e);
             return false;
           }
         });
@@ -71,13 +91,20 @@ async function bootstrap() {
         console.log("CORS blocked origin:", origin);
         console.log("Allowed origins:", allowedOrigins);
         console.log("Allowed patterns:", allowedPatterns);
-        // For development/debugging, you might want to allow all origins
-        // In production, you should reject unknown origins
+        
+        // In production, still allow if it matches Vercel pattern (fallback)
+        if (process.env.NODE_ENV === "production" && /^https:\/\/.*\.vercel\.app$/.test(origin)) {
+          console.log("CORS: Allowing Vercel origin in production:", origin);
+          return callback(null, origin);
+        }
+        
+        // For development/debugging, allow all origins
         if (process.env.NODE_ENV === "development") {
           console.log("CORS: Allowing origin in development mode:", origin);
           return callback(null, origin);
         }
-        callback(new Error("Not allowed by CORS"));
+        
+        callback(new Error(`Not allowed by CORS: ${origin}`));
       } catch (error) {
         console.error("CORS origin callback error:", error);
         // On error, allow the request to prevent blocking (for development)

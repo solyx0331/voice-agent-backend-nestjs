@@ -53,8 +53,41 @@ Make sure these are set in your Railway service:
 - `PORT` - Server port (Railway sets this automatically, but you can override)
 - `NODE_ENV` - Set to `production` for production deployments
 - `WEBHOOK_BASE_URL` - Your Railway service URL (e.g., `https://your-app.railway.app`)
-- `ALLOWED_ORIGINS` - Comma-separated list of allowed CORS origins
-- `ALLOWED_ORIGIN_PATTERNS` - Comma-separated list of CORS origin patterns
+- `ALLOWED_ORIGINS` - Comma-separated list of allowed CORS origins (e.g., `https://voice-agent-phi-ten.vercel.app`)
+- `ALLOWED_ORIGIN_PATTERNS` - Comma-separated list of CORS origin patterns (e.g., `^https://.*\.vercel\.app$`)
+
+## CORS Configuration
+
+### For Vercel Frontend
+
+If your frontend is deployed on Vercel, add these environment variables in Railway:
+
+1. **ALLOWED_ORIGINS** (recommended):
+   - Variable: `ALLOWED_ORIGINS`
+   - Value: `https://voice-agent-phi-ten.vercel.app`
+   - Or multiple origins: `https://voice-agent-phi-ten.vercel.app,https://your-other-domain.com`
+
+2. **ALLOWED_ORIGIN_PATTERNS** (for all Vercel deployments):
+   - Variable: `ALLOWED_ORIGIN_PATTERNS`
+   - Value: `^https://.*\.vercel\.app$`
+
+**Note**: The backend already includes Vercel pattern matching by default, but setting these explicitly ensures proper CORS handling.
+
+### Troubleshooting CORS Issues
+
+If you're still getting CORS errors:
+
+1. **Check Railway logs** for CORS messages:
+   ```
+   CORS: Allowing origin (exact match): https://voice-agent-phi-ten.vercel.app
+   CORS: Allowing origin (pattern match): https://voice-agent-phi-ten.vercel.app
+   ```
+
+2. **Verify environment variables** are set correctly in Railway
+
+3. **Check the frontend URL** matches exactly (no trailing slashes, correct protocol)
+
+4. **Verify NODE_ENV** is set to `production` in Railway
 
 ## Setting Environment Variables in Railway
 
