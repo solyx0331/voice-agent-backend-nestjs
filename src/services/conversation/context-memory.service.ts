@@ -76,6 +76,7 @@ export class ContextMemoryService implements OnModuleInit {
       fields[schema.fieldName] = {
         value: schema.defaultValue || null,
         filled: false,
+        confirmed: false,
       };
     }
 
@@ -133,13 +134,14 @@ export class ContextMemoryService implements OnModuleInit {
         context.fields[fieldName] = {
           value: null,
           filled: false,
+          confirmed: false,
         };
       }
       
       if (value !== null && value !== undefined) {
         // Check if we have raw/spoken formats stored
-        const rawValue = extracted[`${fieldName}_raw`];
-        const spokenValue = extracted[`${fieldName}_spoken`];
+        const rawValue = extractedFields[`${fieldName}_raw`];
+        const spokenValue = extractedFields[`${fieldName}_spoken`];
         
         context.fields[fieldName] = {
           value,

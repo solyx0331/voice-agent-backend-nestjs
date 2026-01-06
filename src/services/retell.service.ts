@@ -11,6 +11,7 @@ import type {
   LlmUpdateParams,
   LlmResponse,
 } from "retell-sdk/resources/llm";
+import { sanitizeSpeechOutput, validateSpeechOutput } from "./utils/speech-sanitizer";
 
 @Injectable()
 export class RetellService {
@@ -59,10 +60,12 @@ export class RetellService {
         // Set who starts the conversation (agent speaks first)
         start_speaker: "agent",
         
-        // Set the first message (greeting)
-        begin_message: createAgentDto.baseLogic?.greetingMessage || 
-                       createAgentDto.greetingScript || 
-                       `Hello! I'm ${createAgentDto.name}. How can I help you today?`,
+        // Set the first message (greeting) - sanitize to remove any timing instructions
+        begin_message: sanitizeSpeechOutput(
+          createAgentDto.baseLogic?.greetingMessage || 
+          createAgentDto.greetingScript || 
+          `Hello! I'm ${createAgentDto.name}. How can I help you today?`
+        ),
         
         // Build general prompt from agent configuration
         general_prompt: this.buildGeneralPrompt(createAgentDto),
@@ -193,6 +196,43 @@ export class RetellService {
   buildGeneralPrompt(createAgentDto: any): string {
     let prompt = "";
 
+    // CRITICAL: Remove any old prompt text that might contain timing instructions
+    // This ensures no legacy timing instructions leak into the prompt
+    const removeOldFormat = (text: string): string => {
+      if (!text) return text;
+      // Remove old phone number format instructions - comprehensive pattern matching
+      let cleaned = text;
+      
+      // Remove entire "Australian Mobile Number Recognition" section
+      cleaned = cleaned.replace(/Australian Mobile Number Recognition:[\s\S]*?ALWAYS require confirmation[^\n]*\n?/gi, '');
+      cleaned = cleaned.replace(/Australian Mobile Number Recognition[\s\S]*?ALWAYS require confirmation[^\n]*\n?/gi, '');
+      
+      // Remove individual old format lines
+      cleaned = cleaned.replace(/Strengthen recognition for Australian mobile format[^\n]*\n?/gi, '');
+      cleaned = cleaned.replace(/Capture format[^\n]*\n?/gi, '');
+      cleaned = cleaned.replace(/Readback format[^\n]*\[pause\][^\n]*\n?/gi, '');
+      cleaned = cleaned.replace(/Readback format[^\n]*\.\.\.[^\n]*\n?/gi, '');
+      cleaned = cleaned.replace(/Readback format[^\n]*pause[^\n]*\n?/gi, '');
+      cleaned = cleaned.replace(/Split and pace number delivery[^\n]*\n?/gi, '');
+      cleaned = cleaned.replace(/Use natural pauses[^\n]*\n?/gi, '');
+      cleaned = cleaned.replace(/Read digits individually with brief pauses[^\n]*\n?/gi, '');
+      cleaned = cleaned.replace(/Format postcodes: Read digits individually[^\n]*\n?/gi, '');
+      cleaned = cleaned.replace(/When confirming postcodes, always use this clear, paced format[^\n]*\n?/gi, '');
+      
+      // Remove phone number formatting section with timing instructions
+      cleaned = cleaned.replace(/Phone Number Formatting:[\s\S]*?Use natural pauses \(0\.5-1 second\)[^\n]*\n?/gi, '');
+      cleaned = cleaned.replace(/Phone Number Formatting[\s\S]*?between digit groups[^\n]*\n?/gi, '');
+      
+      // Remove postcode formatting section with timing instructions
+      cleaned = cleaned.replace(/Postcode Formatting:[\s\S]*?brief pauses[^\n]*\n?/gi, '');
+      cleaned = cleaned.replace(/Postcode Formatting[\s\S]*?paced format[^\n]*\n?/gi, '');
+      
+      // Clean up multiple blank lines
+      cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+      
+      return cleaned;
+    };
+
     // IMPORTANT: Configuration Flexibility Notice
     prompt += "=== CONFIGURATION FLEXIBILITY ===\n";
     prompt += "All routing logic, company names, products, fields, and business flows are DYNAMIC and CONFIGURABLE.\n";
@@ -201,8 +241,10 @@ export class RetellService {
     prompt += "Any test/mock data (such as example company names or products) should be treated as examples only and can be changed through the admin interface.\n\n";
 
     // Custom system prompt (if provided, use it as the base)
+    // CRITICAL: Sanitize systemPrompt to remove any old timing instructions
     if (createAgentDto.systemPrompt) {
-      prompt += `${createAgentDto.systemPrompt}\n\n`;
+      const sanitizedSystemPrompt = removeOldFormat(createAgentDto.systemPrompt);
+      prompt += `${sanitizedSystemPrompt}\n\n`;
     }
 
     // Agent name and description
@@ -396,8 +438,7 @@ export class RetellService {
     prompt += "   - For clearly understood answers, confirm with brief acknowledgments (e.g., 'Got it, thank you.' or 'Perfect.') and move on.\n";
     prompt += "   - Maintain an internal memory of all information already provided.\n";
     prompt += "   - NEVER ask for information the caller has already provided, even if provided early or out of order.\n";
-    prompt += "   - Ask EXACTLY ONE question at a time. Wait for response before asking the next.\n";
-    prompt += "   - PAUSE for 1-2 seconds after asking each question.\n\n";
+    prompt += "   - Ask EXACTLY ONE question at a time. Wait for response before asking the next.\n\n";
     
     // Intent Matching Flexibility
     prompt += "1a. INTENT MATCHING (FLEXIBILITY):\n";
@@ -441,23 +482,27 @@ export class RetellService {
     prompt += "   - Australian Phone Number Handling (CRITICAL - SYSTEM ENFORCED):\n";
     prompt += "     * CRITICAL: Phone numbers are ALREADY FORMATTED by the system. DO NOT reformat them.\n";
     prompt += "     * CRITICAL: When confirming a phone number, use the EXACT formatted value provided by the system.\n";
-    prompt += "     * CRITICAL: NEVER read phone numbers digit-by-digit. NEVER say individual digits like 'zero', 'four', 'one', 'two' separately.\n";
+    prompt += "     * CRITICAL: NEVER include timing markers such as [pause], (pause), or ellipses when reading phone numbers.\n";
     prompt += "     * CRITICAL: NEVER say the word 'pause' when reading phone numbers.\n";
-    prompt += "     * CRITICAL: The system provides phone numbers in natural format (e.g., '04 12 345 678'). Use this EXACT format.\n";
-    prompt += "     * Example CORRECT confirmation: 'Just to confirm, I have your mobile number as 04 12 345 678. Is that correct?'\n";
-    prompt += "     * Example WRONG (DO NOT DO THIS): 'Zero four one two three four five six seven eight'\n";
-    prompt += "     * Example WRONG (DO NOT DO THIS): 'Zero four... pause... one two... pause... three four five'\n";
+    prompt += "     * CRITICAL: The system provides phone numbers in natural spoken format with commas for grouping.\n";
+    prompt += "     * CRITICAL: Use commas to naturally group numbers - commas create natural pauses in speech.\n";
+    prompt += "     * Australian mobile example (04XX XXX XXX): 'Zero four one two, three four five, six seven eight.'\n";
+    prompt += "     * Australian landline example (03 XXXX XXXX): 'Zero three, nine one two three, four five six seven.'\n";
+    prompt += "     * Example CORRECT confirmation: 'Just to confirm, I have your mobile number as Zero four one two, three four five, six seven eight. Is that correct?'\n";
+    prompt += "     * Example WRONG (DO NOT DO THIS): 'Zero four one two... pause... three four five... pause... six seven eight'\n";
+    prompt += "     * Example WRONG (DO NOT DO THIS): 'Zero four one two [pause] three four five [pause] six seven eight'\n";
     prompt += "     * If you receive a phone number that is NOT in the natural format, ask the caller to repeat it.\n";
     prompt += "     * DO NOT attempt to format or reorganize phone numbers yourself.\n";
     prompt += "     * DO NOT explain how Australian phone numbers work or how many digits they have.\n";
     prompt += "     * If a phone number is already confirmed, DO NOT re-ask or re-read it.\n";
+    prompt += "     * Always confirm using the grouped format with commas.\n";
     prompt += "   - Postcode Handling (CRITICAL - SYSTEM ENFORCED):\n";
     prompt += "     * CRITICAL: Postcodes are ALREADY FORMATTED by the system. DO NOT reformat them.\n";
     prompt += "     * CRITICAL: When confirming a postcode, use the EXACT formatted value provided by the system.\n";
     prompt += "     * CRITICAL: The system provides postcodes in natural spoken format (e.g., 'three zero zero zero').\n";
     prompt += "     * CRITICAL: NEVER say the word 'pause' when reading postcodes.\n";
     prompt += "     * Example CORRECT confirmation: 'Just to confirm, your postcode is three zero zero zero?'\n";
-    prompt += "     * Example WRONG (DO NOT DO THIS): 'Three... pause... zero... pause... zero... pause... zero'\n";
+    prompt += "     * Example WRONG (DO NOT DO THIS): 'Three thousand' (reading as number instead of digits)\n";
     prompt += "     * DO NOT read postcodes as a single number (e.g., 'three thousand').\n";
     prompt += "     * If a postcode is already confirmed, DO NOT re-ask or re-read it.\n\n";
     
@@ -469,30 +514,22 @@ export class RetellService {
     prompt += "   - Make summary OPTIONAL by asking: 'Would you like me to read back the summary of the information I've gathered, or should we end the call here?'\n";
     prompt += "   - Only read summary if user confirms (says 'yes', 'sure', 'go ahead', etc.).\n";
     prompt += "   - If no response after 2 seconds, assume opt-out and proceed to goodbye.\n";
-    prompt += "   - When delivering summary, CLEARLY DISTINGUISH each field with a pause or audible separation.\n";
-    prompt += "   - Use consistent KEY → VALUE phrasing with a brief pause (0.5-1 second) between fields.\n";
-    prompt += "   - AVOID ambiguous phrasing that merges multiple values or sounds like a sentence.\n";
-    prompt += "   - Each field should feel like its own paragraph when spoken - use clear sectioning.\n";
-    prompt += "   - CRITICAL FOR PHONE NUMBERS: Use the EXACT formatted value provided by the system (e.g., '04 12 345 678').\n";
+    prompt += "   - When delivering summary, format as natural sentences, not bullet points.\n";
+    prompt += "   - Use consistent KEY → VALUE phrasing with periods between fields.\n";
+    prompt += "   - CRITICAL FOR PHONE NUMBERS: Use the EXACT formatted value provided by the system (e.g., 'Zero four one two, three four five, six seven eight').\n";
     prompt += "   - CRITICAL FOR PHONE NUMBERS: NEVER read phone numbers digit-by-digit in summaries.\n";
     prompt += "   - CRITICAL FOR POSTCODES: Use the EXACT formatted value provided by the system (e.g., 'three zero zero zero').\n";
-    prompt += "   - Example CORRECT format (clear and well-separated):\n";
+    prompt += "   - Example CORRECT format (natural sentences):\n";
     prompt += "     'Would you like me to read back the summary of the information I've gathered, or should we end the call here?'\n";
     prompt += "     [If user confirms:]\n";
-    prompt += "     'Here's what I have:\n";
-    prompt += "     Full Name: John Smith. [PAUSE 0.5-1s]\n";
-    prompt += "     Phone Number: 04 12 345 678. [PAUSE 0.5-1s]\n";
-    prompt += "     Email Address: john [at] example [dot] com. [PAUSE 0.5-1s]\n";
-    prompt += "     Product: Vinyl Stickers. [PAUSE 0.5-1s]\n";
-    prompt += "     Quantity: Five hundred. [PAUSE 0.5-1s]\n";
-    prompt += "     Postcode: three zero zero zero.'\n";
+    prompt += "     'Here's a quick summary. Full Name: John Smith. Phone Number: Zero four one two, three four five, six seven eight. Email Address: john at example dot com. Product: Vinyl Stickers. Quantity: Five hundred. Postcode: three zero zero zero.'\n";
     prompt += "   - Example WRONG format (avoid - runs together, hard to distinguish):\n";
     prompt += "     'John Smith zero four one two three four five six seven eight john@example.com'\n";
-    prompt += "   - DO NOT say '[pause]' or '[PAUSE]' during summaries - these are literal tokens that should NOT be spoken.\n";
-    prompt += "   - Use natural pauses (silence) between items, but DO NOT verbalize the word 'pause'.\n";
+    prompt += "   - CRITICAL: NEVER include timing instructions like 'pause', '[PAUSE]', or any timing words in your responses.\n";
+    prompt += "   - CRITICAL: Let the TTS engine handle natural pacing - do not try to control timing.\n";
     prompt += "   - For email addresses, spell them clearly: 'john [at] example [dot] com' instead of rushing through 'john@example.com'.\n";
-    prompt += "   - For phone numbers, use the EXACT system-provided format: '04 12 345 678' (read naturally, not digit-by-digit).\n";
-    prompt += "   - Speak SLOWLY and CLEARLY when delivering the summary - this is important information.\n";
+    prompt += "   - For phone numbers, use the EXACT system-provided format with commas: 'Zero four one two, three four five, six seven eight' (read naturally, not digit-by-digit).\n";
+    prompt += "   - Deliver the summary clearly and naturally - this is important information.\n";
     prompt += "   - After summarizing, give the caller the option to hear it again, correct any part, or hang up if satisfied.\n";
     prompt += "   - Say: 'Does that sound correct? Would you like me to repeat anything or make any corrections?'\n";
     prompt += "   - Wait for caller's response. If they want corrections, acknowledge and update accordingly.\n";
@@ -532,7 +569,7 @@ export class RetellService {
     prompt += "   - Each piece of information should be mapped to its specific field name.\n";
     prompt += "   - Do NOT store information as free text blobs. Use the exact field names provided.\n";
     prompt += "   - CRITICAL FOR PHONE NUMBERS: When you capture a phone number, it will be automatically formatted by the system.\n";
-    prompt += "   - CRITICAL FOR PHONE NUMBERS: Always use the formatted version (e.g., '04 12 345 678') when confirming or referencing phone numbers.\n";
+    prompt += "   - CRITICAL FOR PHONE NUMBERS: Always use the formatted version with commas (e.g., 'Zero four one two, three four five, six seven eight') when confirming or referencing phone numbers.\n";
     prompt += "   - CRITICAL FOR POSTCODES: When you capture a postcode, it will be automatically formatted by the system.\n";
     prompt += "   - CRITICAL FOR POSTCODES: Always use the formatted version (e.g., 'three zero zero zero') when confirming or referencing postcodes.\n";
     prompt += "   - NEVER reformat phone numbers or postcodes - use them exactly as provided by the system.\n\n";
@@ -544,7 +581,7 @@ export class RetellService {
     prompt += "   - Your next response should start from exactly where the human cut in - do NOT repeat what you were saying.\n";
     prompt += "   - Listen carefully to what the caller said during the interruption.\n";
     prompt += "   - Respond directly to the caller's interruption - acknowledge it and continue the conversation naturally.\n";
-    prompt += "   - Example: If you were saying 'Let me check that for you...' and caller interrupts with 'Actually, I need...',\n";
+    prompt += "   - Example: If you were saying 'Let me check that for you' and caller interrupts with 'Actually, I need',\n";
     prompt += "     your next response should be: 'Sure, what do you need?' (NOT 'Let me check that for you. Actually, what do you need?')\n";
     prompt += "   - If caller corrects previously provided information, update your memory immediately.\n";
     prompt += "   - If caller provides partial information, acknowledge what you received and ask for clarification only if needed.\n";
@@ -552,18 +589,12 @@ export class RetellService {
     
     // Speech Delivery Rules
     prompt += "=== SPEECH DELIVERY RULES ===\n\n";
-    prompt += "1. PACE AND RHYTHM:\n";
-    prompt += "   - Speak at a SLOW to MODERATE pace.\n";
-    prompt += "   - Insert natural pauses after sentences and questions (0.5-1 second).\n";
-    prompt += "   - Never rush transitions or overlap questions.\n";
-    prompt += "   - After a question mark (?), pause for 1-2 seconds to allow response.\n";
-    prompt += "   - Use punctuation as a guide: periods and commas should have brief pauses.\n\n";
-    
-    prompt += "2. NATURAL FLOW:\n";
+    prompt += "1. NATURAL FLOW:\n";
     prompt += "   - Keep the conversation flowing smoothly and naturally.\n";
     prompt += "   - Avoid abrupt topic changes or sudden jumps.\n";
     prompt += "   - Use natural transitions like 'Great!', 'Perfect!', 'Thank you!'\n";
-    prompt += "   - Acknowledge the caller's response before moving to the next question.\n\n";
+    prompt += "   - Acknowledge the caller's response before moving to the next question.\n";
+    prompt += "   - CRITICAL: Do NOT include any timing instructions in your speech. The TTS engine handles pacing automatically.\n\n";
     
     // Tone and Behavior
     prompt += "=== TONE AND BEHAVIOR ===\n\n";
@@ -1153,8 +1184,7 @@ export class RetellService {
       if (createAgentDto.voice.speed !== undefined) {
         config.voice_speed = Math.max(0.5, Math.min(2, createAgentDto.voice.speed));
       } else {
-        // Default to slower pace (0.85) for natural speech with proper breath control
-        // This allows for natural pauses between sentences
+        // Default to natural speech pace (0.85) - pacing handled by TTS engine
         config.voice_speed = 0.85;
       }
       if (createAgentDto.voice.volume !== undefined) {
@@ -1167,7 +1197,7 @@ export class RetellService {
       // Even if no voice config provided, set defaults to prevent issues
       // CRITICAL: These defaults ensure consistent voice across all TTS outputs
       config.voice_temperature = 0.7;
-      config.voice_speed = 0.85; // Slower pace for natural speech with breath control
+      config.voice_speed = 0.85; // Natural speech pace (pacing handled by TTS engine)
       config.volume = 1.0;
       this.logger.warn(`No voice configuration provided - using default voice settings. This may cause voice inconsistency.`);
     }

@@ -2,6 +2,7 @@ import { Injectable, HttpException, HttpStatus, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { readFile } from "fs/promises";
 import { FormData } from "undici";
+import { sanitizeSpeechOutput, validateSpeechOutput } from "./utils/speech-sanitizer";
 
 @Injectable()
 export class ElevenLabsService {
@@ -191,14 +192,25 @@ export class ElevenLabsService {
     }
 
     try {
-      this.logger.log(`Generating TTS for voice ${voiceId}: ${text.substring(0, 50)}...`);
+      // CRITICAL: Sanitize text before TTS to remove any timing instructions
+      const sanitizedText = sanitizeSpeechOutput(text);
+      
+      // Validate that no forbidden tokens remain
+      const validation = validateSpeechOutput(sanitizedText);
+      if (!validation.valid) {
+        this.logger.warn(`Speech output contains forbidden tokens: ${validation.violations.join(', ')}`);
+        this.logger.warn(`Original text: ${text.substring(0, 200)}`);
+        // Continue with sanitized version
+      }
 
-      // Call ElevenLabs TTS API
+      this.logger.log(`Generating TTS for voice ${voiceId}: ${sanitizedText.substring(0, 50)}...`);
+
+      // Call ElevenLabs TTS API with sanitized text
       // POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}
       const url = `${this.baseUrl}/text-to-speech/${voiceId}`;
       
       const requestBody: any = {
-        text: text,
+        text: sanitizedText, // Use sanitized text (no timing instructions)
         model_id: "eleven_multilingual_v2", // Use multilingual model
       };
 

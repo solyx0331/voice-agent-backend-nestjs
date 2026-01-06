@@ -16,8 +16,10 @@ This document describes the system-level normalization and readback control for 
 ### 1. Normalization Utilities
 
 #### Phone Number Normalizer (`src/services/utils/phone-normalizer.ts`)
-- `normalizeAustralianPhone()`: Normalizes input to raw (0412345678) and spoken ("04 12 345 678") formats
-- `extractPhoneFromText()`: Extracts phone numbers from transcripts
+- `normalizeAustralianPhone()`: Normalizes input to raw (0412345678) and spoken ("Zero four one two, three four five, six seven eight") formats
+- Supports both mobile (04XX) and landline (02XX, 03XX, 07XX, 08XX) formats
+- Uses commas for natural grouping (no timing markers)
+- `extractPhoneFromText()`: Extracts phone numbers from transcripts (numeric or word digits)
 - `getPhoneReadbackFormat()`: Returns the spoken format for readback
 
 #### Postcode Normalizer (`src/services/utils/postcode-normalizer.ts`)
@@ -55,11 +57,19 @@ Phone numbers extracted from transcripts are automatically normalized:
 2. System extracts: "0412345678"
 3. System normalizes:
    - `rawPhoneNumber`: "0412345678"
-   - `spokenPhoneNumber`: "04 12 345 678"
-4. LLM confirms: "Just to confirm, I have your mobile number as 04 12 345 678. Is that correct?"
+   - `spokenPhoneNumber`: "Zero four one two, three four five, six seven eight"
+   - `isMobile`: true
+4. LLM confirms: "Just to confirm, I have your mobile number as Zero four one two, three four five, six seven eight. Is that correct?"
 5. User confirms: "Yes"
 6. System marks field as `confirmed: true`
 7. LLM never re-asks this number
+
+### Phone Number Format Rules
+- **Mobile (04XX)**: "Zero four one two, three four five, six seven eight"
+- **Landline (03XX)**: "Zero three, nine one two three, four five six seven"
+- **No timing markers**: Never use [pause], (pause), or ellipses
+- **Commas for grouping**: Commas create natural pauses in speech
+- **Always confirm using grouped format**: Use the exact system-provided format
 
 ### Postcode Capture
 1. User says: "Postcode is 3000"

@@ -10,6 +10,7 @@ import { EmailService } from "../../services/email.service";
 import { LiveCallsGateway } from "../websocket/websocket.gateway";
 import { normalizeAustralianPhone, extractPhoneFromText } from "../../services/utils/phone-normalizer";
 import { normalizeAustralianPostcode, extractPostcodeFromText } from "../../services/utils/postcode-normalizer";
+import { sanitizeSpeechOutput, validateSpeechOutput } from "../../services/utils/speech-sanitizer";
 
 @Injectable()
 export class WebhooksService {
@@ -982,11 +983,22 @@ Call Summary:
         return null;
       }
 
-      this.logger.log(`Generating TTS for text: ${textToSpeak.substring(0, 100)}...`);
+      // CRITICAL: Sanitize text before TTS to remove any timing instructions
+      const sanitizedText = sanitizeSpeechOutput(textToSpeak);
+      
+      // Validate that no forbidden tokens remain
+      const validation = validateSpeechOutput(sanitizedText);
+      if (!validation.valid) {
+        this.logger.error(`Speech output contains forbidden tokens: ${validation.violations.join(', ')}`);
+        this.logger.error(`Original text: ${textToSpeak.substring(0, 200)}`);
+        // Continue anyway but log the violation
+      }
 
-      // Generate TTS using ElevenLabs
+      this.logger.log(`Generating TTS for sanitized text: ${sanitizedText.substring(0, 100)}...`);
+
+      // Generate TTS using ElevenLabs with sanitized text
       const audioBuffer = await this.elevenLabsService.textToSpeech(
-        textToSpeak,
+        sanitizedText,
         agent.voice.customVoiceId,
         {
           stability: agent.voice.temperature !== undefined ? agent.voice.temperature / 2 : 0.5, // Map temperature (0-2) to stability (0-1)
